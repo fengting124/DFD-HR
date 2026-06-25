@@ -7,7 +7,7 @@
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.3.1-brightgreen)
 ![Python](https://img.shields.io/badge/Python-3.10.15-brightgreen)
 
-📄 **Paper:** [DFD-HR](https://cvpr.thecvf.com/virtual/2026/poster/36871) &nbsp;|&nbsp; 💾 **Checkpoints:** [Google Drive](https://drive.google.com/file/d/1ZZa0ZSOsam6KQ7YdAu5Uwkbkp0joqs4H/view?usp=drive_link)
+📄 **Paper:** [DFD-HR](https://openaccess.thecvf.com/content/CVPR2026/papers/Sun_DFD-HR_Generalizable_Deepfake_Detection_via_Hierarchical_Routing_Learning_CVPR_2026_paper.pdf) &nbsp;|&nbsp; 💾 **Checkpoints:** [Google Drive](https://drive.google.com/file/d/1ZZa0ZSOsam6KQ7YdAu5Uwkbkp0joqs4H/view?usp=drive_link)
 
 > 🎉🎉🎉 **Our paper has been accepted by CVPR2026 🏆!**
 
@@ -112,3 +112,18 @@ python3 training/test.py \
 You can then obtain evaluation results similar to those reported in our manuscript.
 
 <a href="#top">[Back to top]</a>
+
+---
+
+## 📕 Citation
+If you find our work helpful to your research, please consider citing our paper as follows:
+```
+@InProceedings{Sun_2026_CVPR,
+    author    = {Sun, Jiamu and Yan, Zhiyuan and Zhang, Ke-Yue and Yao, Taiping and Ding, Shouhong},
+    title     = {DFD-HR: Generalizable Deepfake Detection via Hierarchical Routing Learning},
+    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+    month     = {June},
+    year      = {2026},
+    pages     = {13984-13995}
+}
+```
