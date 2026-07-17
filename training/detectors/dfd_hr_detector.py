@@ -46,43 +46,61 @@ from .utils import TokenRouter, LayerRouter, MoEAdapter, gumbel_sigmoid_sample, 
 logger = logging.getLogger(__name__)
 
 
+def compute_routed_layer_indices(layer_count, remain_layer):
+    return list(range(remain_layer, layer_count))
+
+
+def build_moe_adapter_kwargs(config):
+    moe_config = config.get('backbone_config', {}).get('moe', {})
+    return {
+        'num_experts': moe_config.get('num_experts', 4),
+        'top_k': moe_config.get('top_k', moe_config.get('k', 4)),
+        'noise': moe_config.get('noise', False),
+        'load_balancing_weight': moe_config.get('load_balancing_weight', 0.0),
+    }
+
+
 @DETECTOR.register_module(module_name='dfd_hr')
 class DFDHRDetector(AbstractDetector):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.backbone = self.build_backbone(config).vision_model
-        self.query_token = nn.Parameter(torch.randn(1, 1, 768))
-        self.query_attn = nn.MultiheadAttention(768, num_heads=4, batch_first=True)
+        clip_model = self.build_backbone(config)
+        self.backbone = clip_model.vision_model
+        self.visual_projection = clip_model.visual_projection
+        hidden_size = self.backbone.config.hidden_size
+        projection_dim = self.visual_projection.out_features
+        layer_count = config['backbone_config'].get('layer', self.backbone.config.num_hidden_layers)
+        moe_kwargs = build_moe_adapter_kwargs(config)
+        self.routed_layer_indices = set(
+            compute_routed_layer_indices(layer_count, config['backbone_config']['remain_layer'])
+        )
+        self.query_token = nn.Parameter(torch.randn(1, 1, projection_dim))
+        self.query_attn = nn.MultiheadAttention(projection_dim, num_heads=4, batch_first=True)
         # Insert MoE adapters into both attn and mlp branches.
         self.adapters_attn = nn.ModuleList([
             MoEAdapter(
-                D_features=1024,
-                num_experts=4,
-                k=4,
+                D_features=hidden_size,
                 mlp_ratio=0.25,
                 expert_mlp_ratio=0.25,
                 skip_connect=True,
-                noise=False
-            ) for _ in range(24)
+                **moe_kwargs,
+            ) for _ in range(layer_count)
         ])
         self.adapters_mlp = nn.ModuleList([
             MoEAdapter(
-                D_features=1024,
-                num_experts=4,
-                k=4,
+                D_features=hidden_size,
                 mlp_ratio=0.25,
                 expert_mlp_ratio=0.25,
                 skip_connect=True,
-                noise=False
-            ) for _ in range(24)
+                **moe_kwargs,
+            ) for _ in range(layer_count)
         ])
         # Token-level and layer-level routers
-        self.token_router = nn.ModuleList(TokenRouter(1024) for _ in range(24))
-        self.layer_router = nn.ModuleList(LayerRouter(1024) for _ in range(24))
+        self.token_router = nn.ModuleList(TokenRouter(hidden_size) for _ in range(layer_count))
+        self.layer_router = nn.ModuleList(LayerRouter(hidden_size) for _ in range(layer_count))
         self.capacity = config['backbone_config']['capacity']
-        self.visual_projection = self.build_backbone(config).visual_projection
-        self.head = nn.Linear(1536, 2)
+        self.head = nn.Linear(projection_dim * 2, 2)
         self.loss_func = self.build_loss(config)
 
     def build_backbone(self, config):
@@ -146,13 +164,14 @@ class DFDHRDetector(AbstractDetector):
         batch_size = hidden_states.size(0)
         # active_mask == 1 means the sample is still "active" and keeps computing layers.
         active_mask = torch.ones(batch_size, device=hidden_states.device)
+        loss_spearman = torch.zeros((), device=hidden_states.device)
 
         for idx, encoder_layer in enumerate(self.backbone.encoder.layers[0:self.config['backbone_config']['layer']]):
             if output_hidden_states:
                 encoder_states = encoder_states + (hidden_states,)
 
             # MoD full-layer drop (gumbel exit).
-            if idx >= self.config['backbone_config']['remain_layer'] and idx <= 22:
+            if idx in self.routed_layer_indices:
                 hidden_states_cls = hidden_states[:, 0, :]
 
                 logits = self.layer_router[idx](hidden_states_cls)  # shape: (batch_size, 1) or (batch_size, dim)
@@ -356,6 +375,8 @@ class DFDHRDetector(AbstractDetector):
         label = data_dict['label']
         pred = pred_dict['cls']
         loss_spearman = pred_dict['loss_spearman']
+        if loss_spearman is None:
+            loss_spearman = pred.new_zeros(())
         loss = self.loss_func(pred, label) + 0.1 * loss_spearman
         loss_dict = {'overall': loss}
         return loss_dict

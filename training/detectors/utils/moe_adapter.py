@@ -8,11 +8,13 @@ class MoEAdapter(nn.Module):
                  D_features, 
                  num_experts=4, 
                  k=1,
+                 top_k=None,
                  mlp_ratio=0.25,
                  expert_mlp_ratio=0.25,
                  act_layer=nn.GELU, 
                  skip_connect=True,
-                 noise=True):
+                 noise=True,
+                 load_balancing_weight=0.0):
         """
         MoE-enhanced Adapter with Mixture of Experts
         Args:
@@ -24,9 +26,12 @@ class MoEAdapter(nn.Module):
         super().__init__()
         self.skip_connect = skip_connect
         self.num_experts = num_experts
-        self.k = k
+        self.k = top_k if top_k is not None else k
         self.D_features = D_features
         self.expert_hidden = int(D_features * expert_mlp_ratio)
+        self.load_balancing_weight = load_balancing_weight
+        if self.k < 1 or self.k > self.num_experts:
+            raise ValueError(f'top_k must be in [1, num_experts], got {self.k} for {self.num_experts} experts')
         
         # Gating network
         self.gate = nn.Linear(D_features, num_experts)
@@ -114,7 +119,9 @@ class MoEAdapter(nn.Module):
     def extra_repr(self):
         return (f"experts={self.num_experts}, k={self.k}, "
                 f"input_dim={self.D_features}, "
-                f"expert_hidden={self.expert_hidden}")
+                f"expert_hidden={self.expert_hidden}, "
+                f"noise={self.gate_noise}, "
+                f"load_balancing_weight={self.load_balancing_weight}")
         
 if __name__ == '__main__':
     x = torch.rand(8, 257, 1024)

@@ -53,14 +53,18 @@ def gumbel_sigmoid_sample(logits, tau=1.0):
     return y
 
 
-def spearman_corr(x, y):
+def soft_rank(x, tau=1e-2):
+    pairwise = (x.unsqueeze(-1) - x.unsqueeze(-2)) / tau
+    return torch.sigmoid(pairwise).sum(dim=-1)
+
+
+def spearman_corr(x, y, tau=1e-2):
     """
     x, y: (B, T)
     Returns: (B,) Spearman correlation coefficient for each sample pair.
     """
-    # Ranks starting from 0 (0 is the smallest).
-    x_rank = x.argsort(dim=1).argsort(dim=1).float()
-    y_rank = y.argsort(dim=1).argsort(dim=1).float()
+    x_rank = soft_rank(x, tau=tau)
+    y_rank = soft_rank(y, tau=tau)
 
     x_rank = (x_rank - x_rank.mean(dim=1, keepdim=True)) / (x_rank.std(dim=1, keepdim=True) + 1e-8)
     y_rank = (y_rank - y_rank.mean(dim=1, keepdim=True)) / (y_rank.std(dim=1, keepdim=True) + 1e-8)

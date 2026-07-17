@@ -28,19 +28,27 @@ def parse_metric_for_print(metric_dict):
 
 
 def get_test_metrics(y_pred, y_true, img_names):
+    def resolve_video_key(item):
+        if isinstance(item, dict):
+            if item.get('video_id') is not None:
+                return item['video_id']
+            item = item.get('image_path', '')
+        if '\\' in item:
+            parts = item.split('\\')
+        else:
+            parts = item.split('/')
+        if len(parts) >= 3:
+            return f"{parts[-3]}_{parts[-2]}"
+        if len(parts) >= 2:
+            return parts[-2]
+        return parts[-1]
+
     def get_video_metrics(image, pred, label):
         result_dict = {}
         new_label = []
         new_pred = []
         for item in np.transpose(np.stack((image, pred, label)), (1, 0)):
-            s = item[0]
-            if '\\' in s:
-                parts = s.split('\\')
-            else:
-                parts = s.split('/')
-            # a = parts[-2]
-            a = f"{parts[-3]}_{parts[-2]}"
-            b = parts[-1]
+            a = resolve_video_key(item[0])
 
             if a not in result_dict:
                 result_dict[a] = []
@@ -71,8 +79,8 @@ def get_test_metrics(y_pred, y_true, img_names):
 
         return v_auc, v_eer, v_acc
 
-
-    y_pred = y_pred.squeeze()
+    y_pred = np.asarray(y_pred).squeeze()
+    y_true = np.asarray(y_true)
     # auc
     fpr, tpr, thresholds = metrics.roc_curve(y_true, y_pred, pos_label=1)
     auc = metrics.auc(fpr, tpr)

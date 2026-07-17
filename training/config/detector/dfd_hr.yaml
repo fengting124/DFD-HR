@@ -14,10 +14,16 @@ backbone_config:
   layer: 24
   remain_layer: 20
   capacity: 0.75
+  moe:
+    num_experts: 4
+    top_k: 4
+    noise: false
+    load_balancing_weight: 0.0
 
 # dataset
 all_dataset: [FaceForensics++, Celeb-DF-v2, FaceShifter, DeepFakeDetection, DFDC, DFDCP, test_DFR, test_WDF, test_FFIW, uniface_ff, blendface_ff, mobileswap_ff, e4s_ff, facedancer_ff, fsgan_ff, inswap_ff, simswap_ff]
 train_dataset: [FaceForensics++]
+validation_dataset: []
 test_dataset: [Celeb-DF-v2, FaceShifter, DeepFakeDetection, DFDC, DFDCP, test_DFR, test_WDF, test_FFIW, uniface_ff, blendface_ff, mobileswap_ff, e4s_ff, facedancer_ff, fsgan_ff, inswap_ff, simswap_ff]
 
 compression: c23  # compression-level for videos
@@ -78,3 +84,5 @@ cuda: true   # whether to use CUDA acceleration
 cudnn: true   # whether to use CuDNN for convolution operations
 
 save_avg: true
+protocol_mode: legacy
+legacy_behavior: true

@@ -1,0 +1,78 @@
+# log dir
+log_dir: ./logs/try
+
+# model setting
+model_name: dfd_hr
+backbone_name: ViT-L/14_proj
+
+# backbone setting
+backbone_config:
+  mode: original
+  num_classes: 2
+  inc: 3
+  dropout: false
+  layer: 24
+  remain_layer: 20
+  capacity: 0.75
+  moe:
+    num_experts: 4
+    top_k: 2
+    noise: true
+    load_balancing_weight: 0.0
+
+# dataset
+all_dataset: [FaceForensics++, Celeb-DF-v2, FaceShifter, DeepFakeDetection, DFDC, DFDCP, test_DFR, test_WDF, test_FFIW, uniface_ff, blendface_ff, mobileswap_ff, e4s_ff, facedancer_ff, fsgan_ff, inswap_ff, simswap_ff]
+train_dataset: [FaceForensics++]
+validation_dataset: []
+test_dataset: [Celeb-DF-v2, FaceShifter, DeepFakeDetection, DFDC, DFDCP, test_DFR, test_WDF, test_FFIW, uniface_ff, blendface_ff, mobileswap_ff, e4s_ff, facedancer_ff, fsgan_ff, inswap_ff, simswap_ff]
+
+compression: c23
+train_batchSize: 16
+test_batchSize: 32
+workers: 8
+frame_num: {'train': 8, 'val': 32, 'test': 32}
+resolution: 448
+with_mask: false
+with_landmark: false
+
+use_data_augmentation: true
+
+mean: [0.48145466, 0.4578275, 0.40821073]
+std: [0.26862954, 0.26130258, 0.27577711]
+
+optimizer:
+  type: adam
+  adam:
+    lr: 0.0001
+    beta1: 0.9
+    beta2: 0.999
+    eps: 0.00000001
+    weight_decay: 0.0005
+    amsgrad: false
+  sgd:
+    lr: 0.0002
+    momentum: 0.9
+    weight_decay: 0.0005
+
+lr_scheduler: null
+nEpochs: 20
+start_epoch: 0
+save_epoch: 1
+rec_iter: 100
+logdir: ./logs
+manualSeed: 1024
+save_ckpt: true
+save_feat: true
+
+loss_func: cross_entropy
+losstype: null
+
+metric_scoring: auc
+
+ngpu: 1
+cuda: true
+cudnn: true
+
+save_avg: true
+protocol_mode: paper_aligned
+legacy_behavior: false

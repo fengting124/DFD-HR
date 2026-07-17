@@ -46,8 +46,26 @@ parser.add_argument('--no-save_ckpt', dest='save_ckpt', action='store_false', de
 parser.add_argument('--no-save_feat', dest='save_feat', action='store_false', default=True)
 parser.add_argument("--ddp", action='store_true', default=False)
 parser.add_argument('--local_rank', '--local-rank', type=int, default=0)
-args = parser.parse_args()
-torch.cuda.set_device(args.local_rank)
+
+
+def parse_args():
+    return parser.parse_args()
+
+
+def resolve_runtime_device(ddp, local_rank, cuda_enabled):
+    if cuda_enabled and torch.cuda.is_available():
+        if ddp:
+            torch.cuda.set_device(local_rank)
+        return torch.device(f'cuda:{local_rank}' if ddp else 'cuda')
+    return torch.device('cpu')
+
+
+def build_epoch_range(config):
+    return range(config['start_epoch'], config['nEpochs'])
+
+
+def resolve_eval_loader_names(config):
+    return config.get('validation_dataset', [])
 
 
 def init_seed(config):
@@ -88,14 +106,17 @@ def prepare_training_data(config):
     return train_data_loader
 
 
-def prepare_testing_data(config):
-    def get_test_data_loader(config, test_name):
+def prepare_eval_data(config, mode, dataset_names):
+    def get_eval_data_loader(config, dataset_name):
         # update the config dictionary with the specific testing dataset
         config = config.copy()  # create a copy of config to avoid altering the original one
-        config['test_dataset'] = test_name  # specify the current test dataset
+        if mode == 'val':
+            config['validation_dataset'] = dataset_name
+        else:
+            config['test_dataset'] = dataset_name
         test_set = DeepfakeAbstractBaseDataset(
                     config=config,
-                    mode='test',
+                    mode=mode,
             )
 
         test_data_loader = \
@@ -105,15 +126,15 @@ def prepare_testing_data(config):
                 shuffle=False,
                 num_workers=int(config['workers']),
                 collate_fn=test_set.collate_fn,
-                drop_last = (test_name=='DeepFakeDetection'),
+                drop_last=(dataset_name == 'DeepFakeDetection'),
             )
 
         return test_data_loader
 
-    test_data_loaders = {}
-    for one_test_name in config['test_dataset']:
-        test_data_loaders[one_test_name] = get_test_data_loader(config, one_test_name)
-    return test_data_loaders
+    data_loaders = {}
+    for dataset_name in dataset_names:
+        data_loaders[dataset_name] = get_eval_data_loader(config, dataset_name)
+    return data_loaders
 
 
 def choose_optimizer(model, config):
@@ -183,6 +204,7 @@ def choose_metric(config):
 
 
 def main():
+    args = parse_args()
     # parse options and load config
     with open(args.detector_path, 'r') as f:
         config = yaml.safe_load(f)
@@ -200,6 +222,7 @@ def main():
         config['test_dataset'] = args.test_dataset
     config['save_ckpt'] = args.save_ckpt
     config['save_feat'] = args.save_feat
+    config['device'] = str(resolve_runtime_device(args.ddp, args.local_rank, config['cuda']))
     if config['lmdb']:
         config['dataset_json_folder'] = 'preprocessing/dataset_json_v3'
     # create logger
@@ -222,17 +245,18 @@ def main():
     if config['cudnn']:
         cudnn.benchmark = True
     if config['ddp']:
-        # dist.init_process_group(backend='gloo')
         dist.init_process_group(
-            backend='nccl',
+            backend='nccl' if config['cuda'] and torch.cuda.is_available() else 'gloo',
             timeout=timedelta(minutes=30)
         )
         logger.addFilter(RankFilter(0))
     # prepare the training data loader
     train_data_loader = prepare_training_data(config)
 
-    # prepare the testing data loader
-    test_data_loaders = prepare_testing_data(config)
+    # prepare the validation and testing data loaders
+    validation_dataset_names = resolve_eval_loader_names(config)
+    validation_data_loaders = prepare_eval_data(config, 'val', validation_dataset_names) if validation_dataset_names else None
+    test_data_loaders = prepare_eval_data(config, 'test', config['test_dataset']) if config.get('test_dataset') else None
 
     # prepare the model (detector)
     model_class = DETECTOR[config['model_name']]
@@ -260,19 +284,35 @@ def main():
     trainer = Trainer(config, model, optimizer, scheduler, logger, metric_scoring)
 
     # start training
-    for epoch in range(config['start_epoch'], config['nEpochs'] + 1):
+    best_metric = None
+    for epoch in build_epoch_range(config):
+        if config['ddp'] and isinstance(train_data_loader.sampler, DistributedSampler):
+            train_data_loader.sampler.set_epoch(epoch)
         trainer.model.epoch = epoch
         best_metric = trainer.train_epoch(
                     epoch=epoch,
                     train_data_loader=train_data_loader,
-                    test_data_loaders=test_data_loaders,
+                    eval_data_loaders=validation_data_loaders,
+                    eval_phase='val',
                 )
+        if scheduler is not None and not config.get('SWA', False):
+            scheduler.step()
         if best_metric is not None:
-            logger.info(f"===> Epoch[{epoch}] end with testing {metric_scoring}: {parse_metric_for_print(best_metric)}!")
-    logger.info("Stop Training on best Testing metric {}".format(parse_metric_for_print(best_metric)))
-    
-    if scheduler is not None:
-        scheduler.step()
+            logger.info(f"===> Epoch[{epoch}] end with validation {metric_scoring}: {parse_metric_for_print(best_metric)}!")
+    logger.info("Stop Training on best validation metric {}".format(parse_metric_for_print(best_metric)))
+
+    best_validation_ckpt = os.path.join(trainer.log_dir, 'val', 'avg', 'ckpt_best.pth')
+    if validation_data_loaders is not None and test_data_loaders is not None and os.path.isfile(best_validation_ckpt):
+        trainer.load_ckpt(best_validation_ckpt)
+        final_test_metrics = trainer.test_epoch(
+            epoch=config['nEpochs'],
+            iteration=0,
+            test_data_loaders=test_data_loaders,
+            step=config['nEpochs'] * max(len(train_data_loader), 1),
+            phase='test',
+            save_best=False,
+        )
+        logger.info("Final test metrics after validation-selected training: {}".format(parse_metric_for_print(final_test_metrics)))
 
     # close the tensorboard writers
     for writer in trainer.writers.values():

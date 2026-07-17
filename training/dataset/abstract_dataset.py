@@ -78,7 +78,8 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
         self.config = config
         self.mode = mode
         self.compression = config['compression']
-        self.frame_num = config['frame_num'][mode]
+        frame_mode = mode if mode in config['frame_num'] else 'test'
+        self.frame_num = config['frame_num'][frame_mode]
 
         # Check if 'video_mode' exists in config, otherwise set video_level to False
         self.video_level = config.get('video_mode', False)
@@ -92,11 +93,12 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
         if mode == 'train':
             dataset_list = config['train_dataset']
             # Training data should be collected together for training
-            image_list, label_list = [], []
+            image_list, label_list, name_list = [], [], []
             for one_data in dataset_list:
                 tmp_image, tmp_label, tmp_name = self.collect_img_and_label_for_one_dataset(one_data)
                 image_list.extend(tmp_image)
                 label_list.extend(tmp_label)
+                name_list.extend(tmp_name)
             if self.lmdb:
                 if len(dataset_list)>1:
                     if all_in_pool(dataset_list,FFpp_pool):
@@ -107,15 +109,15 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
                 else:
                     lmdb_path = os.path.join(config['lmdb_dir'], f"{dataset_list[0] if dataset_list[0] not in FFpp_pool else 'FaceForensics++'}_lmdb")
                     self.env = lmdb.open(lmdb_path, create=False, subdir=True, readonly=True, lock=False)
-        elif mode == 'test':
-            one_data = config['test_dataset']
-            # Test dataset should be evaluated separately. So collect only one dataset each time
+        elif mode in ['val', 'test']:
+            one_data = config['validation_dataset'] if mode == 'val' else config['test_dataset']
+            # Validation/test datasets should be evaluated separately. So collect only one dataset each time.
             image_list, label_list, name_list = self.collect_img_and_label_for_one_dataset(one_data)
             if self.lmdb:
                 lmdb_path = os.path.join(config['lmdb_dir'], f"{one_data}_lmdb" if one_data not in FFpp_pool else 'FaceForensics++_lmdb')
                 self.env = lmdb.open(lmdb_path, create=False, subdir=True, readonly=True, lock=False)
         else:
-            raise NotImplementedError('Only train and test modes are supported.')
+            raise NotImplementedError('Only train, val and test modes are supported.')
 
         assert len(image_list)!=0 and len(label_list)!=0, f"Collect nothing for {mode} mode!"
         self.image_list, self.label_list = image_list, label_list
@@ -125,6 +127,7 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
         self.data_dict = {
             'image': self.image_list,
             'label': self.label_list,
+            'video_id': name_list,
         }
 
         self.transform = self.init_data_aug_method()
@@ -199,12 +202,13 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
             cp = 'c40'
         # Get the information for the current dataset
         for label in dataset_info[dataset_name]:
-            sub_dataset_info = dataset_info[dataset_name][label][self.mode]
-            # Special case for FaceForensics++ and DeepFakeDetection, choose the compression type
-            if cp == None and dataset_name in ['FF-DF', 'FF-F2F', 'FF-FS', 'FF-NT', 'FaceForensics++','DeepFakeDetection','FaceShifter']:
-                sub_dataset_info = sub_dataset_info[self.compression]
-            elif cp == 'c40' and dataset_name in ['FF-DF', 'FF-F2F', 'FF-FS', 'FF-NT', 'FaceForensics++','DeepFakeDetection','FaceShifter']:
-                sub_dataset_info = sub_dataset_info['c40']
+            sub_dataset_info = self._resolve_mode_split(
+                split_dict=dataset_info[dataset_name][label],
+                mode=self.mode,
+                compression=self.compression,
+                dataset_name=dataset_name,
+                cp=cp,
+            )
 
             # Iterate over the videos in the dataset
             for video_name, video_info in sub_dataset_info.items():
@@ -231,15 +235,17 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
                 # In this case, we select self.frame_num frames from the original 270 frames
                 total_frames = len(frame_paths)
                 if self.frame_num < total_frames:
-                    total_frames = self.frame_num
                     if self.video_level:
                         # Select clip_size continuous frames
                         start_frame = random.randint(0, total_frames - self.frame_num)
-                        frame_paths = frame_paths[start_frame:start_frame + self.frame_num]  # update total_frames
+                        frame_paths = frame_paths[start_frame:start_frame + self.frame_num]
                     else:
-                        # Select self.frame_num frames evenly distributed throughout the video
-                        step = total_frames // self.frame_num
-                        frame_paths = [frame_paths[i] for i in range(0, total_frames, step)][:self.frame_num]
+                        frame_paths = self._sample_frame_paths(
+                            frame_paths=frame_paths,
+                            frame_num=self.frame_num,
+                            video_level=False,
+                        )
+                    total_frames = len(frame_paths)
 
                 # If video-level methods, crop clips from the selected frames if needed
                 if self.video_level:
@@ -294,6 +300,25 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
         label_list, frame_path_list, video_name_list = zip(*shuffled)
 
         return frame_path_list, label_list, video_name_list
+
+    @staticmethod
+    def _resolve_mode_split(split_dict, mode, compression, dataset_name, cp):
+        mode_key = mode
+        if mode == 'val' and 'val' not in split_dict:
+            mode_key = 'test'
+        sub_dataset_info = split_dict[mode_key]
+        if cp is None and dataset_name in ['FF-DF', 'FF-F2F', 'FF-FS', 'FF-NT', 'FaceForensics++', 'DeepFakeDetection', 'FaceShifter']:
+            sub_dataset_info = sub_dataset_info[compression]
+        elif cp == 'c40' and dataset_name in ['FF-DF', 'FF-F2F', 'FF-FS', 'FF-NT', 'FaceForensics++', 'DeepFakeDetection', 'FaceShifter']:
+            sub_dataset_info = sub_dataset_info['c40']
+        return sub_dataset_info
+
+    @staticmethod
+    def _sample_frame_paths(frame_paths, frame_num, video_level):
+        if video_level or frame_num >= len(frame_paths):
+            return frame_paths
+        sample_indices = np.linspace(0, len(frame_paths) - 1, num=frame_num, dtype=int).tolist()
+        return [frame_paths[idx] for idx in sample_indices]
 
 
     def load_rgb(self, file_path):

@@ -44,13 +44,13 @@ args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-on_2060 = "2060" in torch.cuda.get_device_name()
+on_2060 = torch.cuda.is_available() and "2060" in torch.cuda.get_device_name()
 def init_seed(config):
     if config['manualSeed'] is None:
         config['manualSeed'] = random.randint(1, 10000)
     random.seed(config['manualSeed'])
     torch.manual_seed(config['manualSeed'])
-    if config['cuda']:
+    if config['cuda'] and torch.cuda.is_available():
         torch.cuda.manual_seed_all(config['manualSeed'])
 
 
@@ -126,8 +126,12 @@ def test_epoch(model, test_data_loaders):
         predictions_nps, label_nps,feat_nps = test_one_dataset(model, test_data_loaders[key])
         
         # compute metric for each dataset
+        metric_inputs = [
+            {'image_path': image_path, 'video_id': video_id}
+            for image_path, video_id in zip(data_dict['image'], data_dict.get('video_id', data_dict['image']))
+        ]
         metric_one_dataset = get_test_metrics(y_pred=predictions_nps, y_true=label_nps,
-                                              img_names=data_dict['image'])
+                                              img_names=metric_inputs)
         metrics_all_datasets[key] = metric_one_dataset
         
         # info for each dataset
