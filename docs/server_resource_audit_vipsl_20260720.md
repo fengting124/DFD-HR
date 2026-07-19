@@ -8,6 +8,48 @@ Target correction: `vipsl1` through `vipsl10`
 
 Task scope: controlled read-only analysis. No process, GPU state, SSH setting, server configuration, dependency, dataset, training code, or experiment configuration was changed.
 
+## Latest DFD-HR readiness update
+
+Update time: `2026-07-20 03:02 +0800`
+
+The shared DFD-HR code is under `/home/fengting/Experiments/DDF/DFD-HR`, on branch `agent/server-resource-audit-20260720`, commit `4520fdf`. The `/home/fengting` tree is an NFS mount shared across the reachable vipsl nodes. Each node's `/scratch` is local storage, so dataset names matching across nodes do not imply a shared filesystem.
+
+`ready` in the scheduling context means all of the following are true for DFD-HR:
+
+- the expected local dataset root exists under `/scratch/datasets/deepfake`
+- sampled JSON paths resolve on that node
+- `/scratch/fengting/miniconda3/envs/dfd-hr` exists and imports the required runtime stack
+- DFD-HR unit tests pass with that environment
+- the local output area has enough free scratch space for the intended run
+
+The DFD-HR environment, dataset JSON registry, official weight, and project symlinks were staged and verified on `vipsl3`, `vipsl5`, `vipsl7`, `vipsl9`, and `vipsl10` using resumable `rsync --partial --append-verify` with a 50 MiB/s bandwidth limit. Dataset directories were not copied because the required local replicas were already present.
+
+| Host | GPUs | Current GPU state | DFD-HR runtime | `/scratch` free | Scheduling conclusion |
+| --- | --- | --- | --- | ---: | --- |
+| vipsl3 | 2 x RTX 2080 Ti | idle | ready | 551 GiB | usable for 11 GiB-card smoke tests and moderate runs |
+| vipsl5 | 4 x RTX 2080 Ti | idle | ready | 648 GiB | best 2080 Ti choice for multi-GPU jobs |
+| vipsl6 | 4 x RTX 2080 Ti | idle | ready | 2022 GiB | best local 2080 Ti choice when free |
+| vipsl7 | 2 x RTX 2080 Ti | idle | ready | 1006 GiB | good secondary 2080 Ti target |
+| vipsl9 | 2 x RTX 3090 | occupied | ready | 2777 GiB | prepared, but do not schedule while current jobs run |
+| vipsl10 | 2 x RTX 3090 | idle | ready | 81 GiB | usable for smoke tests, debugging, inference, or tightly bounded small runs only |
+
+vipsl10 has the strongest per-card memory among idle nodes, but `/scratch` is 98 percent used. It should not be used for long training runs that write large checkpoints, logs, caches, frame dumps, or repeated experiment outputs unless the run writes to another node or a quota is explicitly enforced. Keep new vipsl10 output below roughly 30 GiB and maintain at least 30 to 50 GiB free scratch as a failure margin.
+
+The top-level vipsl10 scratch accounting audit was intentionally bounded. Confirmed large entries are:
+
+| Path | Size |
+| --- | ---: |
+| `/scratch/hengji` | 634,093,793,280 bytes |
+| `/scratch/datasets` | 236,320,665,600 bytes |
+| `/scratch/linjing` | 210,462,986,240 bytes |
+| `/scratch/jinyong` | 21,534,650,368 bytes |
+| `/scratch/fengting` | 10,738,233,344 bytes |
+| `/scratch/qifei` | 2,643,435,520 bytes |
+
+This proves datasets are a material part of vipsl10 usage, but they are not the main known component among measured entries. The measured top-level entries do not fully explain the 3.4 TiB used on `/scratch`; the remaining gap needs an administrator-level or approved maintenance-window filesystem accounting pass. No other users' file contents were read.
+
+The original audit sections below are retained as historical snapshots from `20260720_005246`. Prefer the latest readiness table above for DFD-HR scheduling decisions.
+
 ## Method and safety boundary
 
 Each target received one non-interactive SSH connection attempt with `BatchMode=yes`, an 8-second connection timeout, and host-key verification enabled. Reachable nodes were sampled twice. Per-node snapshot intervals were 69 to 74 seconds. Collection was restricted to public system state and GPU process username, PID, executable name, elapsed time, start time, GPU UUID, and GPU memory. No command arguments, environment variables, shell history, project files, datasets, private keys, tokens, or other users' directories were read.
