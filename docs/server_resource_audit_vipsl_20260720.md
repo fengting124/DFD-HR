@@ -10,7 +10,7 @@ Task scope: controlled read-only analysis. No process, GPU state, SSH setting, s
 
 ## Latest DFD-HR readiness update
 
-Update time: `2026-07-20 03:02 +0800`
+Update time: `2026-07-20 03:22 +0800`
 
 The shared DFD-HR code is under `/home/fengting/Experiments/DDF/DFD-HR`, on branch `agent/server-resource-audit-20260720`, commit `4520fdf`. The `/home/fengting` tree is an NFS mount shared across the reachable vipsl nodes. Each node's `/scratch` is local storage, so dataset names matching across nodes do not imply a shared filesystem.
 
@@ -35,18 +35,53 @@ The DFD-HR environment, dataset JSON registry, official weight, and project syml
 
 vipsl10 has the strongest per-card memory among idle nodes, but `/scratch` is 98 percent used. It should not be used for long training runs that write large checkpoints, logs, caches, frame dumps, or repeated experiment outputs unless the run writes to another node or a quota is explicitly enforced. Keep new vipsl10 output below roughly 30 GiB and maintain at least 30 to 50 GiB free scratch as a failure margin.
 
-The top-level vipsl10 scratch accounting audit was intentionally bounded. Confirmed large entries are:
+### vipsl10 scratch storage detail
 
-| Path | Size |
+vipsl10 `/scratch` is local ext4 storage on `/dev/sda`, not the shared NFS home mount. Current filesystem state:
+
+| Metric | Value |
 | --- | ---: |
-| `/scratch/hengji` | 634,093,793,280 bytes |
-| `/scratch/datasets` | 236,320,665,600 bytes |
-| `/scratch/linjing` | 210,462,986,240 bytes |
-| `/scratch/jinyong` | 21,534,650,368 bytes |
-| `/scratch/fengting` | 10,738,233,344 bytes |
-| `/scratch/qifei` | 2,643,435,520 bytes |
+| Total size | 3.6 TiB |
+| Used | 3.4 TiB |
+| Available to user jobs | 81 GiB |
+| Use percentage | 98 percent |
+| Raw free blocks | 267 GiB |
+| Reserved blocks not available to normal users | 186 GiB |
+| Inode use | 22M / 233M, 10 percent |
 
-This proves datasets are a material part of vipsl10 usage, but they are not the main known component among measured entries. The measured top-level entries do not fully explain the 3.4 TiB used on `/scratch`; the remaining gap needs an administrator-level or approved maintenance-window filesystem accounting pass. No other users' file contents were read.
+The inode count is healthy. The constraint is block capacity. Because ext4 reserves blocks for privileged use, normal jobs see only 81 GiB available even though raw free blocks are larger.
+
+The bounded top-level accounting result is:
+
+| Path | Size bytes | Approx size |
+| --- | ---: | ---: |
+| `/scratch/shengrong` | 2,427,615,830,016 | 2.21 TiB |
+| `/scratch/hengji` | 634,093,793,280 | 590 GiB |
+| `/scratch/datasets` | 236,320,665,600 | 220 GiB |
+| `/scratch/linjing` | 210,462,986,240 | 196 GiB |
+| `/scratch/jinyong` | 21,534,650,368 | 20 GiB |
+| `/scratch/fengting` | 10,738,233,344 | 10 GiB |
+| `/scratch/qifei` | 2,643,435,520 | 2.5 GiB |
+| `/scratch/yuanqiao` | not fully measured | timeout and permission limits |
+
+This shows the main known vipsl10 scratch pressure is `/scratch/shengrong`, not the deepfake datasets and not `/scratch/fengting`. `/scratch/yuanqiao` could not be fully measured within the 20-second bounded pass because some subdirectories denied read access and the command timed out. No other users' file contents were read.
+
+The local deepfake dataset replica under `/scratch/datasets/deepfake` accounts for 236,320,665,600 bytes in total:
+
+| Dataset path | Size bytes | Approx size |
+| --- | ---: | ---: |
+| `WildDeepfake` | 74,350,268,416 | 69 GiB |
+| `HydraFake` | 61,449,695,232 | 57 GiB |
+| `LAV-DF` | 25,887,793,152 | 24 GiB |
+| `FaceForensics++` | 24,968,605,696 | 23 GiB |
+| `Celeb-DF-v2` | 13,614,120,960 | 13 GiB |
+| `DFDCP` | 10,422,145,024 | 9.7 GiB |
+| `DFDC` | 8,429,289,472 | 7.9 GiB |
+| `VDDL` | 8,432,566,272 | 7.9 GiB |
+| `DF40` | 7,027,781,632 | 6.5 GiB |
+| `simswap` | 1,738,391,552 | 1.6 GiB |
+
+`/scratch/fengting` on vipsl10 is small relative to the disk pressure. Its measured top-level entries are mostly the staged DFD-HR runtime assets: `/scratch/fengting/miniconda3` is 6.1 GB, `/scratch/fengting/crucial_results` is 2.3 GB, `/scratch/fengting/DFD-HR` is 1.6 GB, and `/scratch/fengting/dfd_hr_repro_20260718` is 88 MB.
 
 The original audit sections below are retained as historical snapshots from `20260720_005246`. Prefer the latest readiness table above for DFD-HR scheduling decisions.
 
