@@ -1,5 +1,7 @@
 # Laboratory Server Resource Audit
 
+> Superseded: this run used the incorrect aliases `ssh1..ssh10`. Use `server_resource_audit_vipsl_20260720.md` for scheduling decisions.
+
 Audit run: `20260720_003845`
 
 Controller: `vipsl6` (`ssh6`)
