@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `test/mini-run`
+Current task branch: `infra/clip-asset-source`
 
-Completed scope: T4.3 one-epoch bounded Mini Run
+Completed scope: T4.4 official CLIP asset source metadata audit
 
-Next task branch: `infra/clip-asset-source`
+Next task branch: awaiting explicit asset-transfer approval
 
 ## 3. 当前里程碑
 
@@ -605,9 +605,11 @@ checksums.sha256
 
 从 CLIP 初始化开始，不加载发布的 DFD-HR 权重。使用验证集选择 best，并维护可恢复 last。
 
-阻塞证据（2026-07-20）：默认 Hugging Face cache、当前用户共享 scratch 模型文件和现有本地资产记录中均未找到可离线加载并校验的 `openai/clip-vit-large-patch14` 预训练资产。官方 DFD-HR checkpoint 只允许校准与评估，不能替代独立训练初始化。
+资产来源审计：**DONE**。官方仓库 `openai/clip-vit-large-patch14` 的只读元数据审计固定到 revision `32bd64288804d66eefd0ccbe215aa642df71cc41`；首选 `model.safetensors` 大小 `1710540580` bytes，LFS SHA-256 `a2bf730a0c7debf160f7a6b50b3aaf3703e7e88ac73de7a314903141db026dcb`，配套 `config.json` 大小 `4519` bytes。精确来源记录在 Git 外 `.local/asset_sources.yaml`，本轮未下载文件。
 
-下一步：只读确认可靠来源、大小和 SHA-256，并获得复制/下载资产及启动正式训练的明确批准。
+阻塞证据（2026-07-20）：默认 Hugging Face cache、当前用户共享 scratch 模型文件和现有本地资产记录中均未找到可离线加载并校验的该预训练资产。官方 DFD-HR checkpoint 只允许校准与评估，不能替代独立训练初始化。
+
+下一步：等待复制或下载 pinned 官方 snapshot 的明确批准；获批后只准备资产并校验 SHA-256，仍需另行批准才能启动正式训练。
 
 ### T4.5 跨数据集最终评估
 
