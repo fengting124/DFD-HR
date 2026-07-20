@@ -14,6 +14,7 @@ sys.path.append(project_root_dir)
 import pickle
 import datetime
 import logging
+import shutil
 import numpy as np
 import random
 from contextlib import nullcontext
@@ -32,6 +33,7 @@ from torch.optim.swa_utils import AveragedModel, SWALR
 from torch import distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 from metrics.utils import get_test_metrics
+from structured_metrics import JSONLMetricsWriter
 
 FFpp_pool=['FaceForensics++','FF-DF','FF-F2F','FF-FS','FF-NT']#
 
@@ -84,6 +86,119 @@ class Trainer(object):
                 self.config['model_name'] + task_str + '_' + self.timenow
             )
         os.makedirs(self.log_dir, exist_ok=True)
+        self._configure_structured_metrics()
+
+    def _configure_structured_metrics(self):
+        metrics_path = self.config.get('metrics_jsonl', os.path.join(self.log_dir, 'metrics.jsonl'))
+        interval = self.config.get('metrics_interval', self.config.get('rec_iter', 100))
+        if isinstance(interval, bool) or not isinstance(interval, int) or interval < 1:
+            raise ValueError('metrics_interval must be a positive integer')
+        distributed = (
+            self.config.get('ddp', False)
+            and dist.is_available()
+            and dist.is_initialized()
+        )
+        rank = dist.get_rank() if distributed else 0
+        self.metrics_interval = interval
+        self.metrics_writer = JSONLMetricsWriter(
+            metrics_path,
+            run_id=self.config.get('run_id') or os.environ.get('DFDHR_RUN_ID'),
+            enabled=rank == 0,
+        )
+
+    @staticmethod
+    def _metric_number(value):
+        if isinstance(value, torch.Tensor):
+            if value.numel() != 1:
+                raise ValueError('structured scalar metrics must contain exactly one value')
+            value = value.detach().cpu().item()
+        if isinstance(value, np.generic):
+            value = value.item()
+        return float(value)
+
+    def _resource_metrics(self):
+        disk = shutil.disk_usage(self.metrics_writer.path.parent)
+        resources = {
+            'disk_free_bytes': disk.free,
+            'disk_total_bytes': disk.total,
+            'cuda_memory_allocated_bytes': 0,
+            'cuda_memory_reserved_bytes': 0,
+            'cuda_max_memory_allocated_bytes': 0,
+        }
+        if self.device.type == 'cuda' and torch.cuda.is_available():
+            resources.update({
+                'cuda_memory_allocated_bytes': torch.cuda.memory_allocated(self.device),
+                'cuda_memory_reserved_bytes': torch.cuda.memory_reserved(self.device),
+                'cuda_max_memory_allocated_bytes': torch.cuda.max_memory_allocated(self.device),
+            })
+        return resources
+
+    def _append_structured_metric(self, event):
+        writer = getattr(self, 'metrics_writer', None)
+        if writer is None or not writer.enabled:
+            return False
+        return writer.append({**event, **self._resource_metrics()})
+
+    def _record_train_batch(self, epoch, iteration, global_step, losses, batch_metrics, step_time, data_time):
+        total_batches = self._metrics_total_batches
+        if iteration != 0 and global_step % self.metrics_interval != 0 and iteration + 1 != total_batches:
+            return False
+        optimizer = getattr(self, 'optimizer', None)
+        learning_rates = [group['lr'] for group in optimizer.param_groups] if optimizer is not None else []
+        plain_losses = {name: self._metric_number(value) for name, value in losses.items()}
+        plain_metrics = {name: self._metric_number(value) for name, value in batch_metrics.items()}
+        return self._append_structured_metric({
+            'event': 'train_batch',
+            'phase': 'train',
+            'epoch': epoch,
+            'iteration': iteration,
+            'global_step': global_step,
+            'loss': plain_losses.get('overall'),
+            'losses': plain_losses,
+            'metrics': plain_metrics,
+            'learning_rate': learning_rates[0] if learning_rates else None,
+            'learning_rates': learning_rates,
+            'step_time_seconds': step_time,
+            'data_time_seconds': data_time,
+            'world_size': self.config['world_size'],
+            'micro_batch_size': self.config['train_batchSize'],
+            'gradient_accumulation_steps': self.gradient_accumulation_steps,
+            'effective_batch_size': self.config['effective_batch_size'],
+        })
+
+    def _record_validation(self, phase, epoch, iteration, global_step, losses, metrics, elapsed_time):
+        plain_losses = {}
+        overall_losses = []
+        for dataset, recorders in losses.items():
+            dataset_losses = {}
+            if recorders is not None:
+                for name, recorder in recorders.items():
+                    value = recorder.average()
+                    if value is not None:
+                        dataset_losses[name] = self._metric_number(value)
+            plain_losses[dataset] = dataset_losses
+            if 'overall' in dataset_losses:
+                overall_losses.append(dataset_losses['overall'])
+        optimizer = getattr(self, 'optimizer', None)
+        learning_rates = [group['lr'] for group in optimizer.param_groups] if optimizer is not None else []
+        return self._append_structured_metric({
+            'event': 'validation' if phase == 'val' else 'evaluation',
+            'phase': phase,
+            'epoch': epoch,
+            'iteration': iteration,
+            'global_step': global_step,
+            'loss': sum(overall_losses) / len(overall_losses) if overall_losses else None,
+            'losses': plain_losses,
+            'metrics': metrics,
+            'learning_rate': learning_rates[0] if learning_rates else None,
+            'learning_rates': learning_rates,
+            'step_time_seconds': elapsed_time,
+            'data_time_seconds': None,
+            'world_size': self.config.get('world_size', 1),
+            'micro_batch_size': self.config.get('train_batchSize'),
+            'gradient_accumulation_steps': self.config.get('gradient_accumulation_steps', 1),
+            'effective_batch_size': self.config.get('effective_batch_size'),
+        })
 
     def _configure_optimization_runtime(self):
         accumulation_steps = self.config.get('gradient_accumulation_steps', 1)
@@ -539,7 +654,12 @@ class Trainer(object):
 
         self.optimizer.zero_grad(set_to_none=True)
         total_batches = len(train_data_loader)
+        self._metrics_total_batches = total_batches
+        previous_iteration_end = time.perf_counter()
         for iteration, data_dict in tqdm(enumerate(train_data_loader),total=total_batches):
+            batch_ready_at = time.perf_counter()
+            data_time = batch_ready_at - previous_iteration_end
+            step_started_at = batch_ready_at
             self.setTrain()
             data_dict = self.move_data_dict_to_device(data_dict)
 
@@ -582,6 +702,16 @@ class Trainer(object):
             ## store loss
             for name, value in losses.items():
                 train_recorder_loss[name].update(value)
+
+            self._record_train_batch(
+                epoch=epoch,
+                iteration=iteration,
+                global_step=step_cnt + 1,
+                losses=losses,
+                batch_metrics=batch_metrics,
+                step_time=time.perf_counter() - step_started_at,
+                data_time=data_time,
+            )
 
             # run tensorboard to visualize the training process
             if iteration % 300 == 0 and self.config['local_rank']==0:
@@ -629,7 +759,7 @@ class Trainer(object):
                             epoch,
                             iteration,
                             eval_data_loaders,
-                            step_cnt,
+                            step_cnt + 1,
                             phase=eval_phase,
                         )
 
@@ -638,6 +768,7 @@ class Trainer(object):
                     test_best_metric = None
 
             step_cnt += 1
+            previous_iteration_end = time.perf_counter()
         return test_best_metric
 
     def get_respect_acc(self,prob,label):
@@ -723,6 +854,7 @@ class Trainer(object):
             writer.add_scalar(f'{phase}_metrics/acc_fake', acc_fake, global_step=step)
         self.logger.info(metric_str)
     def test_epoch(self, epoch, iteration, test_data_loaders, step, phase='test', save_best=True):
+        evaluation_started_at = time.perf_counter()
         # set model to eval mode
         self.setEval()
 
@@ -770,6 +902,16 @@ class Trainer(object):
             metrics_all_datasets['avg'] = self._plain_metric_values(avg_metric)
             if save_best and self.config.get('save_avg',False):
                 self.save_best(epoch, iteration, step, None, 'avg', avg_metric, phase)
+
+        self._record_validation(
+            phase=phase,
+            epoch=epoch,
+            iteration=iteration,
+            global_step=step,
+            losses=losses_all_datasets,
+            metrics=metrics_all_datasets,
+            elapsed_time=time.perf_counter() - evaluation_started_at,
+        )
 
         self.logger.info(f'===> {phase.capitalize()} Done!')
         if not save_best:

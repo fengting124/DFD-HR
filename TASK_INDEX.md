@@ -2,7 +2,7 @@
 
 本文件是新机器、新 Codex 会话和实验中断后的任务入口。通用规范见 `AGENTS.md`，详细实验流程见 `docs/EXPERIMENT_WORKFLOW.md`。
 
-> 当前状态：此前提出的标准化实验目录、模板、Jupyter Notebook、训练代码修复和正式复现大部分尚未完成。除有明确证据的项目外，全部按 `TODO` 处理，不得把计划描述为已实现。
+> 当前状态：控制节点审计、实验生命周期、Jupyter 00-05、训练正确性修复及单/双卡 Smoke 已有证据；Mini Run、完整训练、归档实跑和新增节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
 
 ## 1. 启动顺序
 
@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `feat/experiment-registry`
+Current task branch: `feat/structured-training-metrics`
 
-Completed scope: T1.1-T1.4 experiment lifecycle and registry infrastructure
+Completed scope: T1.5 structured training metrics and read-only monitor
 
-Next task branch: `feat/structured-training-metrics`
+Next task branch: `test/mini-run`
 
 ## 3. 当前里程碑
 
@@ -308,14 +308,18 @@ checksums.sha256
 
 ### T1.5 结构化训练指标流
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] Trainer 将 train/validation 的 epoch、global step、loss、学习率、step/data time、显存和磁盘余量追加到 `${RUN_DIR}/metrics.jsonl`。
-- [ ] 多卡仅 rank 0 写入，记录 world size、micro-batch、累积步数和有效 batch。
-- [ ] 每行独立 JSON、原子追加边界明确，异常中断后已有行仍可解析。
-- [ ] `05_training_monitor.ipynb` 只读消费该文件和日志。
+- [x] Trainer 将 train/validation 的 epoch、global step、loss、学习率、step/data time、显存和磁盘余量追加到 `${RUN_DIR}/metrics.jsonl`。
+- [x] 多卡仅 rank 0 写入，记录 world size、micro-batch、累积步数和有效 batch。
+- [x] 每行独立 JSON、原子追加边界明确，异常中断后已有行仍可解析。
+- [x] `05_training_monitor.ipynb` 只读消费该文件和日志。
 
-下一步：从更新后的 `main` 创建 `feat/structured-training-metrics`；完成前不得启动 Mini Run。
+完成证据（2026-07-20）：`JSONLMetricsWriter` 以单次 `O_APPEND` 写入和可选 `fsync` 保存标准 JSON 行，非有限观测值转为 `null`；读取器保留中断尾行之前的全部完整事件。Trainer 记录首批、固定间隔、末批和 validation/test 事件，包含 batch 语义、学习率、耗时、CUDA 内存和磁盘余量；非零 DDP rank 不创建指标文件。生命周期冻结配置显式写入 RUN_ID 和运行根下的 `metrics_jsonl`，verify 同时检查二者。
+
+`05_training_monitor.ipynb` 源文件无执行输出；Git 外 `_001` 因 kernel 未安装 matplotlib 失败后保持原样，未安装软件；零额外依赖版本在 `_002` Restart/Run All 成功，读取 3 个 train 事件和 1 个 validation 事件，并输出趋势、资源字段和有限日志尾部。完整测试为 52 tests OK，本任务未加载模型、读取数据集或启动训练。
+
+提交：`1b188e4`。下一步从更新后的 `main` 创建 `test/mini-run`，使用唯一 RUN_ID 和固定小子集执行 T4.3，不得扩大为正式训练。
 
 ## P2：训练与评估正确性阻塞项
 
@@ -574,13 +578,15 @@ checksums.sha256
 
 提交：`f930ab4`。
 
-下一步：T4.2 已解除；先完成 T1.1-T1.3 的运行路径、实验 registry 与 manifest 生命周期，再允许 T4.3 Mini Run。
+下一步：T4.2 与 T1.1-T1.5 均已完成；按完整生命周期进入 T4.3 Mini Run。
 
 ### T4.3 Mini Run
 
-**状态：BLOCKED by T1.5**
+**状态：TODO**
 
 固定小子集，1–3 epoch。只验证训练闭环，不作为论文结果。
+
+下一步：从更新后的 `main` 创建 `test/mini-run`，先冻结小子集、配置、空间预算和成功标准，再执行 1 epoch；不得复用官方权重，不得扩展为完整训练。
 
 ### T4.4 完整训练
 

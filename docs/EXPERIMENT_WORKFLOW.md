@@ -213,7 +213,7 @@ print(subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
 [DONE] 02_dataset_protocol_audit.ipynb
 [DONE] 03_single_gpu_memory_smoke.ipynb
 [DONE] 04_official_weight_eval.ipynb
-[TODO] 05_training_monitor.ipynb
+[DONE] 05_training_monitor.ipynb
 ```
 
 每个 Notebook 只解决一个问题，必须在 Restart Kernel 后 Run All 成功。源文件进入 Git，执行后副本进入运行目录。
@@ -292,6 +292,10 @@ scripts/archive_experiment.sh --run-id "$RUN_ID"
 ## 10. 结构化指标
 
 `metrics.jsonl` 每行至少包含：时间戳、RUN_ID、epoch、global_step、loss、learning rate、step/data time、显存、validation 指标和磁盘余量。训练监控 Notebook 只读取该文件和日志，不访问训练进程内存。
+
+生命周期冻结配置将 `metrics_jsonl` 指向 RUN_ID 根目录。Trainer 在首批、`metrics_interval`（默认沿用 `rec_iter`）和末批追加 train 事件，并在 validation/test 完成后追加聚合事件；DDP 仅 rank 0 写入。每个事件使用单次追加写入，完整行立即同步，非有限观测值记录为 `null`。读取器只容忍最后一行因中断而不完整，中间损坏仍立即报错。
+
+`05_training_monitor.ipynb` 仅依赖标准库和当前仓库模块，读取 `${DFDHR_METRICS_JSONL}` 与可选 `${DFDHR_TRAINING_LOG}`，最多显示最近 20 个训练事件和 40 行日志。执行后副本必须写入 `${DFDHR_RUNTIME_ROOT}`，不得提交到 Git。
 
 ## 11. 完成定义
 
