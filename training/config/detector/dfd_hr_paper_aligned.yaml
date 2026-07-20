@@ -54,6 +54,8 @@ optimizer:
     momentum: 0.9
     weight_decay: 0.0005
 
+amp: false
+gradient_accumulation_steps: 1
 lr_scheduler: null
 nEpochs: 20
 start_epoch: 0

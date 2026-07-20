@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import torch
+import yaml
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -81,9 +82,31 @@ class AmpGradAccumTests(unittest.TestCase):
         with self.assertRaisesRegex(FloatingPointError, "Non-finite loss"):
             trainer.train_step(data, should_step=True, accumulation_divisor=1)
 
+    def test_non_finite_gradient_fails_before_optimizer_step(self):
+        trainer = self.make_trainer()
+        trainer.optimizer.zero_grad(set_to_none=True)
+        trainer.model.linear.weight.register_hook(
+            lambda gradient: torch.full_like(gradient, float("inf"))
+        )
+        data = {"x": torch.tensor([[1.0]]), "y": torch.tensor([[0.0]])}
+
+        with self.assertRaisesRegex(FloatingPointError, "Non-finite gradient"):
+            trainer.train_step(data, should_step=True, accumulation_divisor=1)
+
     def test_sam_rejects_unsupported_accumulation(self):
         with self.assertRaisesRegex(ValueError, "SAM"):
             self.make_trainer(accumulation_steps=2, optimizer_type="sam")
+
+    def test_detector_configs_declare_safe_defaults(self):
+        for relative_path in (
+            "training/config/detector/dfd_hr.yaml",
+            "training/config/detector/dfd_hr_paper_aligned.yaml",
+        ):
+            config = yaml.safe_load(
+                (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+            )
+            self.assertIs(config["amp"], False)
+            self.assertEqual(config["gradient_accumulation_steps"], 1)
 
 
 if __name__ == "__main__":
