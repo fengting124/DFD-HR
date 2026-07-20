@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `test/single-gpu-smoke`
+Current task branch: `test/two-gpu-ddp-smoke`
 
-Completed scope: T4.1 single-GPU two-batch smoke and its standard notebook
+Completed scope: T4.2 two-GPU NCCL 20-step smoke
 
-Next task branch: `test/two-gpu-ddp-smoke`
+Next task branch: `feat/experiment-registry`
 
 ## 3. 当前里程碑
 
@@ -534,13 +534,30 @@ checksums.sha256
 
 ### T4.2 两卡 DDP Smoke Test
 
-**状态：TODO**
+**状态：DONE**
 
 有限步数验证同步、日志、有效 batch、checkpoint、正常退出和恢复。
 
+完成证据（2026-07-20）：
+
+- 在干净提交 `f930ab4` 上使用 `torchrun --standalone --nproc_per_node=2` 完成真实双卡 NCCL Smoke；每 rank 固定 20 optimizer steps，micro-batch `1`、world size `2`、accumulation `1`、有效 batch `2`，未进入 epoch 训练循环。
+- 固定 FaceForensics++ 40 样本由 DistributedSampler 分配；每 rank 均为 10 真/10 假，两个 rank 均完成 20 步并正常退出。
+- rank 0/1 首末 loss 分别为 `0.2712574303 -> 0.2241023779` 和 `0.3696714044 -> 0.1313642859`；平均 step time 为 `1.8392s`/`1.8385s`。
+- rank 0/1 峰值 allocated 为 `6557471744`/`6644567552` bytes，reserved 为 `6784286720`/`6838812672` bytes；两 rank GradScaler final scale 均为 `1024`。
+- 两 rank 最后一步的未缩放 Adapter、Router、Head、Query 梯度均存在、有限且经 DDP 同步一致；训练参数 probe 完全一致，冻结 backbone 保持无梯度。
+- 真实 rank-zero-only 操作结果成功广播到两 rank；未发生 collective 失步。
+- last checkpoint 原子写入，size `2465285464` bytes，SHA-256 `a203bf5cc76f7d1fafcb7d72e0dcafc1c983cff878c4f872166bd4268b84de1a`；包含 2 份 rank-local RNG，两个 rank 均完成模型、optimizer、Scaler、RNG 和 next epoch 恢复，且恢复后的随机流保持 rank 间不同。
+- 结构化报告确认 `process_group_destroyed=true`，运行结束后两张 GPU 均释放；报告、日志和 checkpoint 只保存在 Git 外运行目录。
+- 完整测试为 40 tests OK；新增 DDP last checkpoint 多 rank RNG 收集/恢复，同时保持单 rank旧 checkpoint 兼容。
+- 本任务只执行有限 20-step Smoke，未运行 validation/test epoch、Mini Run 或正式训练，未复制资产或修改系统配置。
+
+提交：`f930ab4`。
+
+下一步：T4.2 已解除；先完成 T1.1-T1.3 的运行路径、实验 registry 与 manifest 生命周期，再允许 T4.3 Mini Run。
+
 ### T4.3 Mini Run
 
-**状态：BLOCKED by T4.2**
+**状态：BLOCKED by P1**
 
 固定小子集，1–3 epoch。只验证训练闭环，不作为论文结果。
 

@@ -312,9 +312,7 @@ def main():
         if best_metric is not None:
             logger.info(f"===> Epoch[{epoch}] end with validation {metric_scoring}: {parse_metric_for_print(best_metric)}!")
         if config['save_ckpt']:
-            trainer._run_rank_zero_synchronized(
-                lambda: trainer.save_last_ckpt(epoch)
-            )
+            trainer.save_last_ckpt_synchronized(epoch)
     logger.info("Stop Training on best validation metric {}".format(parse_metric_for_print(best_metric)))
 
     if validation_data_loaders is not None and test_data_loaders is not None:

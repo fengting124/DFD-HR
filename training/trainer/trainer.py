@@ -266,6 +266,17 @@ class Trainer(object):
         self.best_metrics_all_time = restored_best
 
         rng_state = saved['rng_state']
+        rng_states_by_rank = saved.get('rng_states_by_rank')
+        if (
+            rng_states_by_rank is not None
+            and self.config.get('ddp', False)
+            and dist.is_available()
+            and dist.is_initialized()
+        ):
+            rank = dist.get_rank()
+            if rank >= len(rng_states_by_rank):
+                raise ValueError('full training checkpoint is missing RNG state for this rank')
+            rng_state = rng_states_by_rank[rank]
         required_rng_keys = {'python', 'numpy', 'torch', 'cuda'}
         if not isinstance(rng_state, dict) or not required_rng_keys.issubset(rng_state):
             raise ValueError('full training checkpoint is missing RNG state')
@@ -273,7 +284,10 @@ class Trainer(object):
         np.random.set_state(rng_state['numpy'])
         torch.set_rng_state(rng_state['torch'])
         if torch.cuda.is_available() and rng_state['cuda'] is not None:
-            torch.cuda.set_rng_state_all(rng_state['cuda'])
+            if rng_state.get('cuda_is_local', False):
+                torch.cuda.set_rng_state(rng_state['cuda'], device=self.device)
+            else:
+                torch.cuda.set_rng_state_all(rng_state['cuda'])
 
         next_epoch = int(saved['epoch']) + 1
         self.config['start_epoch'] = next_epoch
@@ -286,7 +300,25 @@ class Trainer(object):
             for key, value in self.best_metrics_all_time.items()
         }
 
-    def _checkpoint_state(self, epoch):
+    def _rng_state(self):
+        distributed = (
+            self.config.get('ddp', False)
+            and dist.is_available()
+            and dist.is_initialized()
+        )
+        return {
+            'python': random.getstate(),
+            'numpy': np.random.get_state(),
+            'torch': torch.get_rng_state(),
+            'cuda': (
+                torch.cuda.get_rng_state(self.device)
+                if torch.cuda.is_available() and distributed
+                else torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None
+            ),
+            'cuda_is_local': distributed,
+        }
+
+    def _checkpoint_state(self, epoch, rng_states_by_rank=None):
         model_to_save = self.model.module if isinstance(self.model, DDP) else self.model
         checkpoint = {
             'state_dict': model_to_save.state_dict(),
@@ -296,13 +328,10 @@ class Trainer(object):
             'epoch': epoch,
             'best_metrics_all_time': self._plain_best_metrics(),
             'config': self.config,
-            'rng_state': {
-                'python': random.getstate(),
-                'numpy': np.random.get_state(),
-                'torch': torch.get_rng_state(),
-                'cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
-            },
+            'rng_state': self._rng_state(),
         }
+        if rng_states_by_rank is not None:
+            checkpoint['rng_states_by_rank'] = rng_states_by_rank
         if 'svdd' in self.config['model_name']:
             checkpoint['R'] = self.model.R
             checkpoint['c'] = self.model.c
@@ -329,13 +358,34 @@ class Trainer(object):
         self.logger.info(f"Checkpoint saved to {save_path}, current ckpt is {ckpt_info}")
         return save_path
 
-    def save_last_ckpt(self, epoch):
+    def save_last_ckpt(self, epoch, rng_states_by_rank=None):
         save_dir = os.path.join(self.log_dir, 'checkpoints')
         os.makedirs(save_dir, exist_ok=True)
         save_path = os.path.join(save_dir, 'ckpt_last.pth')
-        self._atomic_torch_save(self._checkpoint_state(epoch), save_path)
+        self._atomic_torch_save(
+            self._checkpoint_state(epoch, rng_states_by_rank=rng_states_by_rank),
+            save_path,
+        )
         self.logger.info('Last checkpoint saved to %s', save_path)
         return save_path
+
+    def save_last_ckpt_synchronized(self, epoch):
+        distributed = (
+            self.config.get('ddp', False)
+            and dist.is_available()
+            and dist.is_initialized()
+        )
+        if not distributed:
+            return self.save_last_ckpt(epoch)
+
+        rng_states_by_rank = [None] * dist.get_world_size()
+        dist.all_gather_object(rng_states_by_rank, self._rng_state())
+        return self._run_rank_zero_synchronized(
+            lambda: self.save_last_ckpt(
+                epoch,
+                rng_states_by_rank=rng_states_by_rank,
+            )
+        )
 
     def save_swa_ckpt(self):
         save_dir = self.log_dir
