@@ -21,7 +21,12 @@ from evaluation_utils import (
     select_fixed_subset,
     sha256_file,
 )
-from smoke import observe_gradients, validate_output_boundary
+from smoke import (
+    apply_initialization_config,
+    describe_initialization,
+    observe_gradients,
+    validate_output_boundary,
+)
 from train import choose_optimizer
 from trainer.trainer import Trainer
 
@@ -32,7 +37,9 @@ def parse_args():
     parser.add_argument('--test_config_path', required=True)
     parser.add_argument('--dataset_json_folder', required=True)
     parser.add_argument('--data_root', required=True)
-    parser.add_argument('--weights_path', required=True)
+    initialization = parser.add_mutually_exclusive_group(required=True)
+    initialization.add_argument('--weights_path')
+    initialization.add_argument('--clip_model_path')
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--dataset', default='FaceForensics++')
     parser.add_argument('--steps', type=int, default=20)
@@ -52,7 +59,6 @@ def build_config(args, output_dir, local_rank, world_size):
     with open(args.test_config_path, encoding='utf-8') as file:
         config.update(yaml.safe_load(file))
     config.update({
-        'backbone_pretrained': False,
         'dataset_json_folder': str(Path(args.dataset_json_folder).resolve()),
         'train_dataset': [args.dataset],
         'train_batchSize': 1,
@@ -69,7 +75,11 @@ def build_config(args, output_dir, local_rank, world_size):
         'save_feat': False,
         'world_size': world_size,
     })
-    return config
+    return apply_initialization_config(
+        config,
+        weights_path=args.weights_path,
+        clip_model_path=args.clip_model_path,
+    )
 
 
 def values_match(left, right):
@@ -154,7 +164,9 @@ def run_smoke(args, rank, local_rank, world_size):
         raise RuntimeError('Each DDP rank must receive exactly 20 batches.')
 
     model = DETECTOR[config['model_name']](config)
-    checkpoint_info = load_checkpoint_strict(model, args.weights_path)
+    checkpoint_info = None
+    if args.weights_path:
+        checkpoint_info = load_checkpoint_strict(model, args.weights_path)
     optimizer = choose_optimizer(model, config)
     logger = logging.getLogger(f'ddp_smoke.rank{rank}')
     logger.handlers[:] = [logging.NullHandler()]
@@ -285,6 +297,18 @@ def run_smoke(args, rank, local_rank, world_size):
 
     if rank != 0:
         return None
+    checkpoint_report = {
+        'roundtrip_all_ranks': True,
+        'saved_sha256': sha256_file(checkpoint_path),
+        'saved_size_bytes': os.path.getsize(checkpoint_path),
+        'temporary_file_absent': not os.path.exists(checkpoint_path + '.tmp'),
+        'rng_rank_count': world_size,
+    }
+    if checkpoint_info is not None:
+        checkpoint_report.update({
+            'source_sha256': sha256_file(args.weights_path),
+            'source_tensor_count': checkpoint_info['tensor_count'],
+        })
     return {
         'schema_version': 1,
         'status': 'ok',
@@ -304,15 +328,8 @@ def run_smoke(args, rank, local_rank, world_size):
         'parameter_synchronized': True,
         'per_rank_rng_restored': True,
         'rank_summaries': rank_summaries,
-        'checkpoint': {
-            'source_sha256': sha256_file(args.weights_path),
-            'source_tensor_count': checkpoint_info['tensor_count'],
-            'roundtrip_all_ranks': True,
-            'saved_sha256': sha256_file(checkpoint_path),
-            'saved_size_bytes': os.path.getsize(checkpoint_path),
-            'temporary_file_absent': not os.path.exists(checkpoint_path + '.tmp'),
-            'rng_rank_count': world_size,
-        },
+        'checkpoint': checkpoint_report,
+        'initialization': describe_initialization(args, checkpoint_info),
         'config_sha256': sha256_file(args.detector_path),
         'dataset_json_sha256': sha256_file(
             os.path.join(args.dataset_json_folder, f'{args.dataset}.json')

@@ -114,12 +114,16 @@ class DFDHRDetector(AbstractDetector):
                 model_name="openai/clip-vit-large-patch14",
                 backbone_name=config['backbone_name'],
                 pretrained=config.get('backbone_pretrained', True),
+                pretrained_path=config.get('backbone_pretrained_path'),
+                local_files_only=config.get('backbone_local_files_only', False),
             )
         elif config['backbone_name'] == 'ViT-L/14-336px' or config['backbone_name'] == 'ViT-L/14-336px_proj':
             _, backbone = get_clip_visual(
                 model_name="openai/clip-vit-large-patch14-336",
                 backbone_name=config['backbone_name'],
                 pretrained=config.get('backbone_pretrained', True),
+                pretrained_path=config.get('backbone_pretrained_path'),
+                local_files_only=config.get('backbone_local_files_only', False),
             )
         else:
             raise ValueError(f"Unsupported backbone: {config['backbone_name']}")
@@ -414,7 +418,13 @@ class DFDHRDetector(AbstractDetector):
         return pred_dict
 
 
-def get_clip_visual(model_name="openai/clip-vit-base-patch16", backbone_name=None, pretrained=True):
+def get_clip_visual(
+    model_name="openai/clip-vit-base-patch16",
+    backbone_name=None,
+    pretrained=True,
+    pretrained_path=None,
+    local_files_only=False,
+):
     supported_image_sizes = {
         'openai/clip-vit-large-patch14': 224,
         'openai/clip-vit-large-patch14-336': 336,
@@ -423,8 +433,13 @@ def get_clip_visual(model_name="openai/clip-vit-base-patch16", backbone_name=Non
         raise ValueError(f'Unsupported CLIP model: {model_name}')
 
     if pretrained:
-        processor = AutoProcessor.from_pretrained(model_name)
-        model = CLIPModel.from_pretrained(model_name)
+        source = pretrained_path or model_name
+        processor = AutoProcessor.from_pretrained(source, local_files_only=local_files_only)
+        model = CLIPModel.from_pretrained(
+            source,
+            local_files_only=local_files_only,
+            use_safetensors=True,
+        )
     else:
         processor = None
         vision_config = CLIPVisionConfig(

@@ -36,7 +36,9 @@ def parse_args():
     parser.add_argument('--test_config_path', required=True)
     parser.add_argument('--dataset_json_folder', required=True)
     parser.add_argument('--data_root', required=True)
-    parser.add_argument('--weights_path', required=True)
+    initialization = parser.add_mutually_exclusive_group(required=True)
+    initialization.add_argument('--weights_path')
+    initialization.add_argument('--clip_model_path')
     parser.add_argument('--output_dir', required=True)
     parser.add_argument('--precision', choices=('fp32', 'amp'), required=True)
     parser.add_argument('--dataset', default='FaceForensics++')
@@ -59,13 +61,49 @@ def validate_output_boundary(output_dir, repo_root, data_root):
     return output_dir
 
 
+def apply_initialization_config(config, weights_path=None, clip_model_path=None):
+    if bool(weights_path) == bool(clip_model_path):
+        raise ValueError('Specify exactly one of weights_path or clip_model_path.')
+    if weights_path:
+        config['backbone_pretrained'] = False
+        return config
+
+    clip_model_path = Path(clip_model_path).resolve()
+    if not clip_model_path.is_dir():
+        raise ValueError('clip_model_path must be an existing local directory.')
+    if not (clip_model_path / 'model.safetensors').is_file():
+        raise ValueError('clip_model_path must contain model.safetensors.')
+    config.update({
+        'backbone_pretrained': True,
+        'backbone_pretrained_path': str(clip_model_path),
+        'backbone_local_files_only': True,
+    })
+    return config
+
+
+def describe_initialization(args, checkpoint_info=None):
+    if args.weights_path:
+        return {
+            'type': 'dfd_checkpoint',
+            'source_sha256': sha256_file(args.weights_path),
+            'source_tensor_count': checkpoint_info['tensor_count'],
+        }
+    model_path = Path(args.clip_model_path).resolve() / 'model.safetensors'
+    return {
+        'type': 'clip_pretrained',
+        'model_sha256': sha256_file(model_path),
+        'model_size_bytes': model_path.stat().st_size,
+        'local_files_only': True,
+        'dfd_checkpoint_loaded': False,
+    }
+
+
 def build_config(args, output_dir):
     with open(args.detector_path, encoding='utf-8') as file:
         config = yaml.safe_load(file)
     with open(args.test_config_path, encoding='utf-8') as file:
         config.update(yaml.safe_load(file))
     config.update({
-        'backbone_pretrained': False,
         'dataset_json_folder': str(Path(args.dataset_json_folder).resolve()),
         'train_dataset': [args.dataset],
         'train_batchSize': 1,
@@ -81,7 +119,11 @@ def build_config(args, output_dir):
         'save_ckpt': True,
         'save_feat': False,
     })
-    return config
+    return apply_initialization_config(
+        config,
+        weights_path=args.weights_path,
+        clip_model_path=args.clip_model_path,
+    )
 
 
 def observe_gradients(model):
@@ -126,7 +168,9 @@ def run_smoke(args):
     )
 
     model = DETECTOR[config['model_name']](config)
-    checkpoint_info = load_checkpoint_strict(model, args.weights_path)
+    checkpoint_info = None
+    if args.weights_path:
+        checkpoint_info = load_checkpoint_strict(model, args.weights_path)
     frozen_backbone = {
         name: parameter
         for name, parameter in model.named_parameters()
@@ -208,6 +252,18 @@ def run_smoke(args):
     if not roundtrip_ok:
         raise RuntimeError('Full checkpoint round-trip did not restore model state.')
 
+    checkpoint_report = {
+        'roundtrip': roundtrip_ok,
+        'saved_sha256': sha256_file(checkpoint_path),
+        'saved_size_bytes': os.path.getsize(checkpoint_path),
+        'temporary_file_absent': not os.path.exists(checkpoint_path + '.tmp'),
+    }
+    if checkpoint_info is not None:
+        checkpoint_report.update({
+            'source_sha256': sha256_file(args.weights_path),
+            'source_tensor_count': checkpoint_info['tensor_count'],
+        })
+
     return {
         'schema_version': 1,
         'status': 'ok',
@@ -232,14 +288,8 @@ def run_smoke(args):
         'gradient_steps': gradient_steps,
         'optimizer_updated': optimizer_updated,
         'frozen_backbone_parameters': len(frozen_backbone),
-        'checkpoint': {
-            'source_sha256': sha256_file(args.weights_path),
-            'source_tensor_count': checkpoint_info['tensor_count'],
-            'roundtrip': roundtrip_ok,
-            'saved_sha256': sha256_file(checkpoint_path),
-            'saved_size_bytes': os.path.getsize(checkpoint_path),
-            'temporary_file_absent': not os.path.exists(checkpoint_path + '.tmp'),
-        },
+        'checkpoint': checkpoint_report,
+        'initialization': describe_initialization(args, checkpoint_info),
         'config_sha256': sha256_file(args.detector_path),
         'dataset_json_sha256': sha256_file(
             os.path.join(args.dataset_json_folder, f'{args.dataset}.json')
