@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `feat/checkpoint-resume`
+Current task branch: `fix/ddp-validation-sync`
 
-Completed scope: T2.4 recoverable checkpoints
+Completed scope: T2.5 DDP validation synchronization
 
-Next task branch: `fix/ddp-validation-sync`
+Next task branch: `exp/official-checkpoint-eval`
 
 ## 3. 当前里程碑
 
@@ -393,11 +393,25 @@ checksums.sha256
 
 ### T2.5 DDP 验证同步
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] 明确分布式评估或 rank-0 + barrier 方案。
-- [ ] 防止 rank 失步。
-- [ ] 两进程有限 Smoke Test。
+- [x] 明确分布式评估或 rank-0 + barrier 方案。
+- [x] 防止 rank 失步。
+- [x] 两进程有限 Smoke Test。
+
+完成证据（2026-07-20）：
+
+- validation、last checkpoint 和最终测试统一使用 rank-0-only 操作，边界包含前 barrier、结果或错误广播、后 barrier。
+- rank 0 的 validation inference 显式使用 DDP wrapper 下的 `model.module`，避免其他 rank 位于 barrier 时触发 DDP forward collective。
+- validation best metrics 广播给所有 rank；rank-0 操作失败时错误也广播并在所有 rank 同步抛出，避免一侧继续训练。
+- 两进程 gloo 测试实际构造 DDP-wrapped 微型模型，仅 rank 0 执行 validation forward；两个 rank 获得同一指标并在之后成功完成 all-reduce。
+- 完整测试为 25 tests OK；Python 编译、`git diff --check` 和敏感信息扫描通过。
+- 本测试验证 CPU/gloo 控制流和 collective 对齐；真实两卡 CUDA/NCCL 训练链路仍属于 T4.2，不以本证据替代。
+- 未加载项目模型或数据，未启动实验训练。
+
+提交：`2a9e290`（失败两进程同步测试）、`c541c0a`（rank-0 validation 同步与 DDP 推理解包）。
+
+下一步：合并本分支后进入 T2.6 官方权重校准；先做 strict load 和有限评估前检查，不跳过数据协议与输出路径边界。
 
 ### T2.6 官方权重评估校准
 
