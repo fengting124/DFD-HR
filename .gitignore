@@ -68,6 +68,10 @@ coverage.xml
 # -------------------------------------------------------------------
 .ipynb_checkpoints/
 */.ipynb_checkpoints/*
+notebooks/executed/
+notebooks_executed/
+.jupyter/
+.ipython/
 
 # -------------------------------------------------------------------
 # 6. IDE / editor
@@ -96,6 +100,8 @@ outputs/
 output/
 wandb/
 mlruns/
+artifacts/
+server-resource-audit/
 
 # TensorBoard event files
 events.out.tfevents.*
@@ -118,7 +124,15 @@ events.out.tfevents.*
 preprocessing/dataset_json/
 
 # -------------------------------------------------------------------
-# 10. Misc temp / backup files
+# 10. Local infrastructure and private run metadata
+# -------------------------------------------------------------------
+.local/
+*.local.yaml
+*.local.yml
+registry/*.local.csv
+
+# -------------------------------------------------------------------
+# 11. Misc temp / backup files
 # -------------------------------------------------------------------
 *.log
 *.tmp

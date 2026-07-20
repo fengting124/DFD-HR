@@ -1,0 +1,61 @@
+# Copy to .local/infrastructure.yaml and replace placeholders.
+# Never commit the populated local file.
+
+roles:
+  controller_candidate:
+    host_alias: REPLACE_ME
+    purpose: controller_and_fallback_smoke
+
+  unavailable_previous_controller:
+    host_alias: REPLACE_ME
+    purpose: unavailable_until_fresh_recheck
+
+  new_node_a:
+    host_alias: REPLACE_ME
+    purpose: hardware_data_environment_audit
+
+  new_node_b:
+    host_alias: REPLACE_ME
+    purpose: hardware_data_environment_audit
+
+  memory_smoke_candidate:
+    host_alias: REPLACE_ME
+    purpose: high_vram_storage_bounded_smoke
+
+  continuously_occupied_node:
+    host_alias: REPLACE_ME
+    purpose: do_not_schedule_without_coordination
+
+paths:
+  repo_root: REPLACE_ME
+  python_executable: REPLACE_ME
+  data_root: REPLACE_ME
+  runtime_root: REPLACE_ME
+  archive_root: REPLACE_ME
+  cache_root: REPLACE_ME
+  official_checkpoint: REPLACE_ME
+  dataset_json_root: REPLACE_ME
+
+ssh:
+  connect_timeout_seconds: 8
+  batch_mode: true
+  strict_host_key_checking: true
+
+storage_policy:
+  minimum_free_gib_before_launch: 50
+  default_maximum_run_gib: 30
+  keep_best: true
+  keep_last: true
+  keep_epoch_checkpoints: false
+  save_features: false
+
+required_datasets:
+  - FaceForensics++
+  - Celeb-DF-v2
+  - DeepFakeDetection
+  - DFDC
+  - DFDCP
+  - DeeperForensics
+  - WildDeepfake
+  - FFIW
+  - DF40
