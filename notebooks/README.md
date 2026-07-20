@@ -45,3 +45,22 @@ Before committing a source notebook, clear its outputs:
 ```
 
 Notebook responsibilities remain separate. Do not add model loading, dataset traversal, training, or evaluation to the environment and path audit.
+
+## Official checkpoint notebooks
+
+The strict-load and bounded-evaluation notebooks also require:
+
+```bash
+export DFDHR_OFFICIAL_CHECKPOINT=/path/to/official-checkpoint.pth
+```
+
+`01_checkpoint_strict_load.ipynb` constructs the published vision architecture offline and verifies a complete `strict=True` load. `04_official_weight_eval.ipynb` defaults to an eight-sample external-dataset calibration and writes its report under `${DFDHR_RUNTIME_ROOT}/jupyter-validation/`.
+
+Select a different dataset or an intentional complete evaluation through runtime-only environment variables:
+
+```bash
+export DFDHR_EVAL_DATASET=e4s_ff
+export DFDHR_EVAL_MAX_SAMPLES=0
+```
+
+The value `0` means no sample cap. These variables and executed notebooks are local run metadata and must not be committed.
