@@ -10,6 +10,7 @@ import datetime
 import time
 import yaml
 import pickle
+import subprocess
 from tqdm import tqdm
 from copy import deepcopy
 from PIL import Image as pil_image
@@ -31,6 +32,13 @@ from collections import defaultdict
 
 import argparse
 from logger import create_logger
+from evaluation_utils import (
+    atomic_write_json,
+    load_checkpoint_strict,
+    select_fixed_subset,
+    sha256_file,
+    summarize_metrics,
+)
 
 parser = argparse.ArgumentParser(description='Process some paths.')
 parser.add_argument('--detector_path', type=str, 
@@ -39,6 +47,12 @@ parser.add_argument('--detector_path', type=str,
 parser.add_argument("--test_dataset", nargs="+")
 parser.add_argument('--weights_path', type=str, 
                     default='./logs/dfd_hr/ckpt_best.pth')
+parser.add_argument('--architecture_only', action='store_true',
+                    help='construct the backbone without downloading pretrained weights')
+parser.add_argument('--max_samples_per_dataset', type=int)
+parser.add_argument('--test_batch_size', type=int)
+parser.add_argument('--workers', type=int)
+parser.add_argument('--output_path', type=str)
 #parser.add_argument("--lmdb", action='store_true', default=False)
 args = parser.parse_args()
 
@@ -63,6 +77,7 @@ def prepare_testing_data(config):
                 config=config,
                 mode='test', 
             )
+        select_fixed_subset(test_set, config.get('max_samples_per_dataset'))
         test_data_loader = \
             torch.utils.data.DataLoader(
                 dataset=test_set, 
@@ -89,7 +104,6 @@ def choose_metric(config):
 
 def test_one_dataset(model, data_loader):
     prediction_lists = []
-    feature_lists = []
     label_lists = []
     for i, data_dict in tqdm(enumerate(data_loader), total=len(data_loader)):
         # get data
@@ -107,9 +121,8 @@ def test_one_dataset(model, data_loader):
         predictions = inference(model, data_dict)
         label_lists += list(data_dict['label'].cpu().detach().numpy())
         prediction_lists += list(predictions['prob'].cpu().detach().numpy())
-        feature_lists += list(predictions['feat'].cpu().detach().numpy())
     
-    return np.array(prediction_lists), np.array(label_lists),np.array(feature_lists)
+    return np.array(prediction_lists), np.array(label_lists)
     
 def test_epoch(model, test_data_loaders):
     # set model to eval mode
@@ -123,7 +136,7 @@ def test_epoch(model, test_data_loaders):
     for key in keys:
         data_dict = test_data_loaders[key].dataset.data_dict
         # compute loss for each dataset
-        predictions_nps, label_nps,feat_nps = test_one_dataset(model, test_data_loaders[key])
+        predictions_nps, label_nps = test_one_dataset(model, test_data_loaders[key])
         
         # compute metric for each dataset
         metric_inputs = [
@@ -137,7 +150,8 @@ def test_epoch(model, test_data_loaders):
         # info for each dataset
         tqdm.write(f"dataset: {key}")
         for k, v in metric_one_dataset.items():
-            tqdm.write(f"{k}: {v}")
+            if k not in {'pred', 'label'}:
+                tqdm.write(f"{k}: {v}")
 
     return metrics_all_datasets
 
@@ -165,6 +179,14 @@ def main():
     if args.weights_path:
         config['weights_path'] = args.weights_path
         weights_path = args.weights_path
+    if args.architecture_only:
+        config['backbone_pretrained'] = False
+    if args.max_samples_per_dataset is not None:
+        config['max_samples_per_dataset'] = args.max_samples_per_dataset
+    if args.test_batch_size is not None:
+        config['test_batchSize'] = args.test_batch_size
+    if args.workers is not None:
+        config['workers'] = args.workers
     
     # init seed
     init_seed(config)
@@ -178,7 +200,7 @@ def main():
     
     # prepare the model (detector)
     model_class = DETECTOR[config['model_name']]
-    model = model_class(config).to(device)
+    model = model_class(config)
     model.eval()
     epoch = 0
     if weights_path:
@@ -186,27 +208,55 @@ def main():
             epoch = int(weights_path.split('/')[-1].split('.')[0].split('_')[2])
         except:
             epoch = 0
-        ckpt = torch.load(weights_path, map_location=device)
-        if 'state_dict' in ckpt:
-            ckpt = ckpt['state_dict']
-
-        new_weights = {}
-        for key, value in ckpt.items():
-            new_key = key.replace('module.', '')
-            if 'base_model.' in new_key:
-                new_key = new_key.replace('base_model.', 'backbone.')
-            if 'classifier.' in new_key:
-                new_key = new_key.replace('classifier.', 'head.')
-            new_weights[new_key] = value
-        
-
-        model.load_state_dict(new_weights, strict=True)
+        checkpoint_info = load_checkpoint_strict(model, weights_path)
+        model = model.to(device)
         print('===> Load checkpoint done!')
     else:
         print('Fail to load the pre-trained weights')
     
     # start testing
     best_metric = test_epoch(model, test_data_loaders)
+    if args.output_path:
+        dataset_hashes = {
+            dataset_name: sha256_file(os.path.join(config['dataset_json_folder'], f'{dataset_name}.json'))
+            for dataset_name in config['test_dataset']
+        }
+        atomic_write_json({
+            'schema_version': 1,
+            'code': {
+                'git_commit': subprocess.check_output(
+                    ['git', 'rev-parse', 'HEAD'], text=True
+                ).strip(),
+                'dirty': bool(subprocess.check_output(
+                    ['git', 'status', '--porcelain'], text=True
+                ).strip()),
+            },
+            'checkpoint': {
+                'sha256': sha256_file(weights_path),
+                **checkpoint_info,
+            },
+            'config': {
+                'detector_sha256': sha256_file(args.detector_path),
+                'test_sha256': sha256_file('./training/config/test_config.yaml'),
+            },
+            'dataset_json_sha256': dataset_hashes,
+            'evaluation': {
+                'datasets': list(config['test_dataset']),
+                'max_samples_per_dataset': config.get('max_samples_per_dataset'),
+                'batch_size': config['test_batchSize'],
+                'protocol_mode': config.get('protocol_mode'),
+                'sample_counts': {
+                    name: len(loader.dataset)
+                    for name, loader in test_data_loaders.items()
+                },
+                'video_counts': {
+                    name: len(set(loader.dataset.data_dict['video_id']))
+                    for name, loader in test_data_loaders.items()
+                },
+                'metrics': summarize_metrics(best_metric),
+            },
+        }, args.output_path)
+        print('===> Wrote evaluation report')
     print('===> Test Done!')
 
 if __name__ == '__main__':

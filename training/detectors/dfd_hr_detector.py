@@ -37,7 +37,12 @@ from metrics.base_metrics_class import calculate_metrics_for_train
 from .base_detector import AbstractDetector
 from detectors import DETECTOR
 from loss import LOSSFUNC
-from transformers import AutoProcessor, CLIPModel
+from transformers import (
+    AutoProcessor,
+    CLIPModel,
+    CLIPVisionConfig,
+    CLIPVisionModelWithProjection,
+)
 from transformers.modeling_outputs import BaseModelOutput
 from .utils import forward_query_loss as multiscale_forward_query_loss
 from .utils import TokenRouter, LayerRouter, MoEAdapter, gumbel_sigmoid_sample, spearman_corr
@@ -104,13 +109,20 @@ class DFDHRDetector(AbstractDetector):
         self.loss_func = self.build_loss(config)
 
     def build_backbone(self, config):
-        # Please download the checkpoints from the link below.
         if config['backbone_name'] == 'ViT-L/14' or config['backbone_name'] == 'ViT-L/14_proj':
-            # use CLIP-large-14
-            _, backbone = get_clip_visual(model_name="openai/clip-vit-large-patch14", backbone_name=config['backbone_name'])
+            _, backbone = get_clip_visual(
+                model_name="openai/clip-vit-large-patch14",
+                backbone_name=config['backbone_name'],
+                pretrained=config.get('backbone_pretrained', True),
+            )
         elif config['backbone_name'] == 'ViT-L/14-336px' or config['backbone_name'] == 'ViT-L/14-336px_proj':
-            # use CLIP-large-14-336px
-            _, backbone = get_clip_visual(model_name="openai/clip-vit-large-patch14-336", backbone_name=config['backbone_name'])
+            _, backbone = get_clip_visual(
+                model_name="openai/clip-vit-large-patch14-336",
+                backbone_name=config['backbone_name'],
+                pretrained=config.get('backbone_pretrained', True),
+            )
+        else:
+            raise ValueError(f"Unsupported backbone: {config['backbone_name']}")
         return backbone
 
     def build_loss(self, config):
@@ -402,13 +414,30 @@ class DFDHRDetector(AbstractDetector):
         return pred_dict
 
 
-def get_clip_visual(model_name="openai/clip-vit-base-patch16", backbone_name=None):
-    if model_name == 'openai/clip-vit-large-patch14':
-        processor = AutoProcessor.from_pretrained('openai/clip-vit-large-patch14')
-        model = CLIPModel.from_pretrained('openai/clip-vit-large-patch14')
-    if model_name == 'openai/clip-vit-large-patch14-336':
-        processor = AutoProcessor.from_pretrained('openai/clip-vit-large-patch14-336')
-        model = CLIPModel.from_pretrained('openai/clip-vit-large-patch14-336')
+def get_clip_visual(model_name="openai/clip-vit-base-patch16", backbone_name=None, pretrained=True):
+    supported_image_sizes = {
+        'openai/clip-vit-large-patch14': 224,
+        'openai/clip-vit-large-patch14-336': 336,
+    }
+    if model_name not in supported_image_sizes:
+        raise ValueError(f'Unsupported CLIP model: {model_name}')
+
+    if pretrained:
+        processor = AutoProcessor.from_pretrained(model_name)
+        model = CLIPModel.from_pretrained(model_name)
+    else:
+        processor = None
+        vision_config = CLIPVisionConfig(
+            hidden_size=1024,
+            intermediate_size=4096,
+            num_hidden_layers=24,
+            num_attention_heads=16,
+            image_size=supported_image_sizes[model_name],
+            patch_size=14,
+            projection_dim=768,
+            hidden_act='quick_gelu',
+        )
+        model = CLIPVisionModelWithProjection(vision_config)
     
     for name, param in model.named_parameters():
         param.requires_grad = False
