@@ -30,6 +30,16 @@ class TrainHelpersTests(unittest.TestCase):
 
         self.assertEqual(device, torch.device("cpu"))
 
+    def test_local_rank_uses_torchrun_environment(self):
+        self.assertEqual(train.resolve_local_rank(None, {'LOCAL_RANK': '1'}), 1)
+
+    def test_explicit_local_rank_overrides_environment(self):
+        self.assertEqual(train.resolve_local_rank(0, {'LOCAL_RANK': '1'}), 0)
+
+    def test_local_rank_rejects_invalid_environment(self):
+        with self.assertRaisesRegex(ValueError, 'LOCAL_RANK'):
+            train.resolve_local_rank(None, {'LOCAL_RANK': 'invalid'})
+
     def test_resolve_eval_loader_names_prefers_validation_over_test(self):
         config = {
             "validation_dataset": ["Celeb-DF-v2"],
