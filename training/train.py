@@ -41,6 +41,7 @@ parser.add_argument('--detector_path', type=str,
                     default='./training/config/detector/dfd_hr.yaml',
                     help='path to detector YAML file')
 parser.add_argument("--train_dataset", nargs="+")
+parser.add_argument("--validation_dataset", nargs="+")
 parser.add_argument("--test_dataset", nargs="+")
 parser.add_argument('--no-save_ckpt', dest='save_ckpt', action='store_false', default=True)
 parser.add_argument('--no-save_feat', dest='save_feat', action='store_false', default=True)
@@ -65,7 +66,13 @@ def build_epoch_range(config):
 
 
 def resolve_eval_loader_names(config):
-    return config.get('validation_dataset', [])
+    validation_dataset = config.get('validation_dataset')
+    if not validation_dataset:
+        raise ValueError(
+            'validation_dataset must explicitly name at least one dataset; '
+            'test_dataset cannot be used for checkpoint selection.'
+        )
+    return validation_dataset
 
 
 def init_seed(config):
@@ -218,6 +225,8 @@ def main():
     # If arguments are provided, they will overwrite the yaml settings
     if args.train_dataset:
         config['train_dataset'] = args.train_dataset
+    if args.validation_dataset:
+        config['validation_dataset'] = args.validation_dataset
     if args.test_dataset:
         config['test_dataset'] = args.test_dataset
     config['save_ckpt'] = args.save_ckpt
@@ -321,5 +330,5 @@ def main():
 
 
 if __name__ == '__main__':
-    # python3 -m torch.distributed.launch --nproc_per_node=4 training/train.py --detector_path ./training/config/detector/dfd_hr.yaml --train_dataset FaceForensics++  --test_dataset Celeb-DF-v2 --ddp
+    # python3 -m torch.distributed.launch --nproc_per_node=4 training/train.py --detector_path ./training/config/detector/dfd_hr.yaml --train_dataset FaceForensics++ --validation_dataset FaceForensics++ --test_dataset Celeb-DF-v2 --ddp
     main()

@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import torch
 
@@ -35,6 +36,20 @@ class TrainHelpersTests(unittest.TestCase):
         names = train.resolve_eval_loader_names(config)
 
         self.assertEqual(names, ["Celeb-DF-v2"])
+
+    def test_resolve_eval_loader_names_rejects_missing_validation_dataset(self):
+        with self.assertRaisesRegex(ValueError, "validation_dataset"):
+            train.resolve_eval_loader_names({"validation_dataset": []})
+
+    def test_parse_args_accepts_validation_dataset_override(self):
+        with patch.object(
+            sys,
+            "argv",
+            ["train.py", "--validation_dataset", "FaceForensics++"],
+        ):
+            args = train.parse_args()
+
+        self.assertEqual(args.validation_dataset, ["FaceForensics++"])
 
 
 if __name__ == "__main__":

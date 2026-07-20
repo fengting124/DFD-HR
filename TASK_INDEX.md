@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `infra/jupyter-standard`
+Current task branch: `fix/validation-protocol`
 
-Completed scope: T3.1 and `00_environment_and_paths.ipynb`
+Completed scope: T2.1 explicit validation protocol
 
-Next task branch: `fix/validation-protocol`
+Next task branch: `fix/final-test-metrics`
 
 ## 3. 当前里程碑
 
@@ -300,11 +300,25 @@ checksums.sha256
 
 ### T2.1 显式验证集协议
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] FaceForensics++ validation 显式配置。
-- [ ] validation 缺失时立即失败，禁止回退到 test。
-- [ ] 增加有效和无效划分测试。
+- [x] FaceForensics++ validation 显式配置。
+- [x] validation 缺失时立即失败，禁止回退到 test。
+- [x] 增加有效和无效划分测试。
+
+完成证据（2026-07-20）：
+
+- 两个 DFD-HR detector YAML 均显式设置 `validation_dataset: [FaceForensics++]` 和 `frame_num.val: 32`；训练 CLI 支持 `--validation_dataset` 覆盖。
+- `resolve_eval_loader_names` 对缺失或空 validation 配置立即抛出 `ValueError`，不再允许无 validation 继续训练。
+- 数据 split 解析只接受请求的 mode；缺少 `val` 时立即抛出 `ValueError`，不再以 `test` 替代。
+- 当前 FaceForensics++ JSON 的 5 类标签均已有限验证存在 `train`/`val`/`test` 和 `val/c23`，未遍历数据集文件。
+- 回归测试覆盖空 validation、缺失 `val`、显式 `val` 和 CLI 覆盖；完整测试为 12 tests OK。
+- YAML 解析、Python 编译、隐式回退模式扫描、`git diff --check` 和敏感信息扫描通过。
+- 本任务未启动训练，未修改数据、权重、系统或 CUDA 配置。
+
+提交：`ad51336`（失败回归测试）、`a1293e2`（协议强制）、`8fb2ddf`（显式配置、CLI 和文档）。
+
+下一步：合并本分支后从更新的 `main` 创建 `fix/final-test-metrics`，完成 T2.2；不在本分支混入指标保存修改。
 
 ### T2.2 最终测试指标
 

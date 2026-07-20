@@ -31,22 +31,41 @@ class DatasetSamplingTests(unittest.TestCase):
             ],
         )
 
-    def test_validation_mode_falls_back_to_test_split(self):
+    def test_validation_mode_rejects_missing_validation_split(self):
         split_dict = {
-            "real": {
-                "test": {
-                    "c23": {
-                        "vid0": {
-                            "label": "FF-real",
-                            "frames": ["a.png", "b.png"],
-                        }
+            "test": {
+                "c23": {
+                    "vid0": {
+                        "label": "FF-real",
+                        "frames": ["a.png", "b.png"],
+                    }
+                }
+            }
+        }
+
+        with self.assertRaisesRegex(ValueError, "explicit 'val' split"):
+            DeepfakeAbstractBaseDataset._resolve_mode_split(
+                split_dict=split_dict,
+                mode="val",
+                compression="c23",
+                dataset_name="FaceForensics++",
+                cp=None,
+            )
+
+    def test_validation_mode_uses_explicit_validation_split(self):
+        split_dict = {
+            "val": {
+                "c23": {
+                    "vid0": {
+                        "label": "FF-real",
+                        "frames": ["a.png", "b.png"],
                     }
                 }
             }
         }
 
         resolved = DeepfakeAbstractBaseDataset._resolve_mode_split(
-            split_dict=split_dict["real"],
+            split_dict=split_dict,
             mode="val",
             compression="c23",
             dataset_name="FaceForensics++",
