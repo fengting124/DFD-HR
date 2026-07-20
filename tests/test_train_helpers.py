@@ -36,6 +36,10 @@ class TrainHelpersTests(unittest.TestCase):
 
         self.assertEqual(names, ["Celeb-DF-v2"])
 
+    def test_resolve_eval_loader_names_rejects_missing_validation_dataset(self):
+        with self.assertRaisesRegex(ValueError, "validation_dataset"):
+            train.resolve_eval_loader_names({"validation_dataset": []})
+
 
 if __name__ == "__main__":
     unittest.main()
