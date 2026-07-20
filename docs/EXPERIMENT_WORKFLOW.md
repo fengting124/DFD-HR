@@ -205,20 +205,68 @@ print(subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
 
 ### 6.3 Notebook 清单
 
-以下全部仍需实现：
+当前实现状态以 `TASK_INDEX.md` 为准：
 
 ```text
-00_environment_and_paths.ipynb
-01_checkpoint_strict_load.ipynb
-02_dataset_protocol_audit.ipynb
-03_single_gpu_memory_smoke.ipynb
-04_official_weight_eval.ipynb
-05_training_monitor.ipynb
+[DONE] 00_environment_and_paths.ipynb
+[DONE] 01_checkpoint_strict_load.ipynb
+[DONE] 02_dataset_protocol_audit.ipynb
+[DONE] 03_single_gpu_memory_smoke.ipynb
+[DONE] 04_official_weight_eval.ipynb
+[TODO] 05_training_monitor.ipynb
 ```
 
 每个 Notebook 只解决一个问题，必须在 Restart Kernel 后 Run All 成功。源文件进入 Git，执行后副本进入运行目录。
 
-## 7. 节点迁移和硬件审计
+## 7. 实验生命周期工具
+
+运行前必须设置 `AGENTS.md` 规定的六个 `DFDHR_*` 路径变量，并使用 `${DFDHR_PYTHON}` 调用工具。初始化要求 Git 工作树干净、RUN_ID 未出现在 runtime/archive/registry，且输出、缓存和归档根均位于仓库与数据根之外。
+
+```bash
+scripts/init_experiment.sh \
+  --run-id "$RUN_ID" \
+  --config training/config/detector/dfd_hr.yaml \
+  --base-config training/config/test_config.yaml \
+  --dataset-json "$DATASET_JSON" \
+  --objective "$OBJECTIVE" \
+  --hypothesis "$HYPOTHESIS" \
+  --success-criterion "$SUCCESS_CRITERION" \
+  --single-changed-variable "$CHANGED_VARIABLE" \
+  --node-role "$NODE_ROLE" \
+  --command "$COMMAND" \
+  --epochs "$EPOCHS" \
+  --precision "$PRECISION" \
+  --gpu-count "$GPU_COUNT" \
+  --gpu-indices "$GPU_INDICES" \
+  --per-gpu-batch "$PER_GPU_BATCH" \
+  --gradient-accumulation-steps "$ACCUMULATION" \
+  --workers "$WORKERS" \
+  --maximum-local-size-gib "$LOCAL_BUDGET_GIB"
+```
+
+初始化会创建 T1.4 的最小目录、合并并冻结配置、把训练输出重定向到该 RUN_ID、关闭特征保存、采集白名单环境/Git 信息并生成 SHA-256。随后使用：
+
+```bash
+scripts/capture_experiment_metadata.sh --run-id "$RUN_ID"
+scripts/freeze_experiment_config.sh \
+  --run-id "$RUN_ID" \
+  --config training/config/detector/dfd_hr.yaml \
+  --base-config training/config/test_config.yaml
+scripts/checksum_experiment.sh --run-id "$RUN_ID"
+scripts/verify_experiment.sh --run-id "$RUN_ID"
+```
+
+实验完成后再执行 `experiment_lifecycle.py register` 写入脱敏 registry。registry 禁止绝对内部路径、IP、SSH、token 或凭据，只保存角色和 `${DFDHR_*}` 相对位置。
+
+归档默认只预演：
+
+```bash
+scripts/archive_experiment.sh --run-id "$RUN_ID"
+```
+
+只有明确批准后才增加 `--execute`。执行模式复制到 archive、比较全部 SHA-256，且无论成功或失败都保留 runtime 源目录；工具不提供自动删除能力。
+
+## 8. 节点迁移和硬件审计
 
 真实节点别名和路径保存在 `.local/infrastructure.yaml`，公共文档仅使用角色名。
 
@@ -228,7 +276,7 @@ print(subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
 
 审计阶段不安装软件、不复制数据、不修改系统设置、不读取其他用户的私有内容。
 
-## 8. 存储受限节点
+## 9. 存储受限节点
 
 存储受限节点用于显存 Smoke、推理或边界明确的小实验。要求：
 
@@ -241,11 +289,11 @@ print(subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip())
 
 不建议直接把远端网络目录作为 `torch.save()` 目标。
 
-## 9. 结构化指标
+## 10. 结构化指标
 
 `metrics.jsonl` 每行至少包含：时间戳、RUN_ID、epoch、global_step、loss、learning rate、step/data time、显存、validation 指标和磁盘余量。训练监控 Notebook 只读取该文件和日志，不访问训练进程内存。
 
-## 10. 完成定义
+## 11. 完成定义
 
 一个实验只有同时具备 RUN_ID、问题定义、干净提交、冻结配置、数据协议、环境记录、命令、日志、指标、best/last、归档校验和明确结论，才算完成。
 
