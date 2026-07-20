@@ -56,6 +56,11 @@ class ExperimentLifecycleTests(unittest.TestCase):
             manifest['protocol']['validation_checks_per_epoch'],
             {'first_epoch': 1, 'later_epochs': 2},
         )
+        self.assertEqual(manifest['protocol']['mode'], 'paper_spec')
+        self.assertEqual(
+            manifest['protocol']['paper_spec_basis']['moe_routing'],
+            'paper_equations_13_14',
+        )
         self.assertFalse(manifest['protocol']['run_final_test_after_training'])
         self.assertEqual(manifest['reproducibility']['mode'], 'deterministic')
         self.assertTrue(manifest['reproducibility']['deterministic_algorithms'])

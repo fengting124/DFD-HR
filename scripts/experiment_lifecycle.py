@@ -299,6 +299,8 @@ def initialize_run(args):
         'success_criteria': args.success_criterion,
     })
     manifest['protocol'].update({
+        'mode': config.get('protocol_mode', 'legacy'),
+        'paper_spec_basis': config.get('paper_spec_basis'),
         'train_dataset': config['train_dataset'],
         'validation_dataset': config['validation_dataset'],
         'test_datasets': config['test_dataset'],

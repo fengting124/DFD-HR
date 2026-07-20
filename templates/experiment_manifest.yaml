@@ -20,6 +20,11 @@ success_criteria:
 
 protocol:
   name: ffpp_c23_cross_dataset
+  mode: paper_spec
+  paper_spec_basis:
+    moe_routing: paper_equations_13_14
+    epochs: official_repository_default
+    amp_and_batch_adaptation: hardware_adaptation_effective_batch_16
   train_dataset:
     - FaceForensics++
   validation_dataset:
