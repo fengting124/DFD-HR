@@ -306,6 +306,13 @@ def initialize_run(args):
         'train_frames_per_video': config['frame_num']['train'],
         'validation_frames_per_video': config['frame_num']['val'],
         'test_frames_per_video': config['frame_num']['test'],
+        'validation_checks_per_epoch': config.get(
+            'validation_checks_per_epoch',
+            {'first_epoch': 1, 'later_epochs': 2},
+        ),
+        'run_final_test_after_training': config.get(
+            'run_final_test_after_training', True
+        ),
     })
     manifest['model'].update({
         'name': config['model_name'],
@@ -379,6 +386,22 @@ def initialize_run(args):
         ),
         'independent_reproduction': not is_dfd_checkpoint,
         'initial_weight_kind': args.initial_weight_kind if args.initial_weight else None,
+    })
+    reproducibility_mode = config.get('reproducibility_mode', 'seeded_best_effort')
+    manifest['reproducibility'].update({
+        'mode': reproducibility_mode,
+        'base_seed': config['manualSeed'],
+        'rank_seed_strategy': 'base_seed_plus_global_rank',
+        'worker_seed_strategy': 'torch_initial_seed',
+        'cudnn_benchmark': config.get(
+            'cudnn_benchmark', reproducibility_mode != 'deterministic'
+        ),
+        'cudnn_deterministic': config.get(
+            'cudnn_deterministic', reproducibility_mode == 'deterministic'
+        ),
+        'deterministic_algorithms': config.get(
+            'deterministic_algorithms', reproducibility_mode == 'deterministic'
+        ),
     })
     assert_resolved(manifest)
     atomic_write_text(

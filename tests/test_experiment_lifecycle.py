@@ -48,6 +48,18 @@ class ExperimentLifecycleTests(unittest.TestCase):
             'torch': str(torch.__version__),
         })
 
+    def test_manifest_template_records_formal_protocol_controls(self):
+        with (PROJECT_ROOT / 'templates/experiment_manifest.yaml').open(encoding='utf-8') as file:
+            manifest = yaml.safe_load(file)
+
+        self.assertEqual(
+            manifest['protocol']['validation_checks_per_epoch'],
+            {'first_epoch': 1, 'later_epochs': 2},
+        )
+        self.assertFalse(manifest['protocol']['run_final_test_after_training'])
+        self.assertEqual(manifest['reproducibility']['mode'], 'deterministic')
+        self.assertTrue(manifest['reproducibility']['deterministic_algorithms'])
+
     def test_config_freeze_merges_base_and_redirects_outputs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

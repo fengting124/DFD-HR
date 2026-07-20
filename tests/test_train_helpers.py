@@ -14,6 +14,7 @@ if str(TRAINING_ROOT) not in sys.path:
     sys.path.insert(0, str(TRAINING_ROOT))
 
 import train
+from trainer.trainer import resolve_validation_iterations
 
 
 class TrainHelpersTests(unittest.TestCase):
@@ -42,6 +43,30 @@ class TrainHelpersTests(unittest.TestCase):
     def test_resolve_eval_loader_names_rejects_missing_validation_dataset(self):
         with self.assertRaisesRegex(ValueError, "validation_dataset"):
             train.resolve_eval_loader_names({"validation_dataset": []})
+
+    def test_formal_training_can_disable_automatic_final_test(self):
+        config = {
+            'run_final_test_after_training': False,
+            'test_dataset': ['Celeb-DF-v2'],
+        }
+
+        self.assertFalse(train.should_run_final_test(config))
+
+    def test_final_test_requires_an_explicit_dataset(self):
+        self.assertFalse(train.should_run_final_test({'test_dataset': []}))
+
+    def test_validation_schedule_matches_official_epoch_profile(self):
+        schedule = {'first_epoch': 1, 'later_epochs': 2}
+
+        self.assertEqual(resolve_validation_iterations(5, 0, schedule), {5})
+        self.assertEqual(resolve_validation_iterations(5, 1, schedule), {3, 5})
+
+    def test_validation_schedule_caps_checks_at_batch_count(self):
+        self.assertEqual(resolve_validation_iterations(2, 4, 5), {1, 2})
+
+    def test_validation_schedule_rejects_incomplete_mapping(self):
+        with self.assertRaisesRegex(ValueError, 'first_epoch'):
+            resolve_validation_iterations(5, 0, {'first_epoch': 1})
 
     def test_parse_args_accepts_validation_dataset_override(self):
         with patch.object(
@@ -72,6 +97,45 @@ class TrainHelpersTests(unittest.TestCase):
             self.assertEqual(config['workers'], 0)
             self.assertEqual(config['nEpochs'], 1)
             self.assertFalse(config['dry_run'])
+
+    def test_deterministic_reproducibility_uses_rank_seed_and_cudnn_flags(self):
+        config = {
+            'manualSeed': 1024,
+            'cuda': False,
+            'cudnn': True,
+            'reproducibility_mode': 'deterministic',
+            'cudnn_benchmark': False,
+            'cudnn_deterministic': True,
+        }
+        with patch.object(train.torch, 'use_deterministic_algorithms') as deterministic:
+            seed = train.configure_reproducibility(config, rank=2)
+
+        self.assertEqual(seed, 1026)
+        self.assertEqual(config['runtime_seed'], 1026)
+        deterministic.assert_called_once_with(True)
+
+    def test_data_loader_generator_is_seeded_by_role(self):
+        config = {'runtime_seed': 1024}
+
+        train_generator = train.build_data_loader_generator(config, 'train')
+        validation_generator = train.build_data_loader_generator(config, 'val')
+
+        self.assertEqual(train_generator.initial_seed(), 1024)
+        self.assertEqual(validation_generator.initial_seed(), 11024)
+
+    def test_deterministic_mode_cannot_disable_deterministic_algorithms(self):
+        config = {
+            'manualSeed': 1024,
+            'cuda': False,
+            'cudnn': True,
+            'reproducibility_mode': 'deterministic',
+            'cudnn_benchmark': False,
+            'cudnn_deterministic': True,
+            'deterministic_algorithms': False,
+        }
+
+        with self.assertRaisesRegex(ValueError, 'deterministic_algorithms=true'):
+            train.configure_reproducibility(config)
 
     def test_fixed_subset_is_exact_balanced_and_deterministic(self):
         dataset = SimpleNamespace(
