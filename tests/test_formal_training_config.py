@@ -136,6 +136,68 @@ class FormalTrainingConfigTests(unittest.TestCase):
             self.assertFalse(config['deterministic_algorithms'])
             self.assertEqual(config['cublas_workspace_config'], ':4096:8')
 
+    def test_builder_accepts_validated_3090_batch_configuration(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            detector = root / 'detector.yaml'
+            base = root / 'base.yaml'
+            json_folder = root / 'json'
+            clip_folder = root / 'clip'
+            json_folder.mkdir()
+            clip_folder.mkdir()
+            (clip_folder / 'model.safetensors').touch()
+            detector.write_text(
+                yaml.safe_dump({
+                    'optimizer': {'type': 'adam', 'adam': {'lr': 0.1}},
+                }),
+                encoding='utf-8',
+            )
+            base.write_text('{}\n', encoding='utf-8')
+
+            config = build_formal_config(
+                detector,
+                base,
+                json_folder,
+                clip_folder,
+                gpu_count=2,
+                train_batch_size=8,
+                gradient_accumulation_steps=1,
+                validation_batch_size=32,
+            )
+
+            self.assertEqual(config['train_batchSize'], 8)
+            self.assertEqual(config['gradient_accumulation_steps'], 1)
+            self.assertEqual(config['test_batchSize'], 32)
+
+    def test_builder_rejects_wrong_effective_batch_size(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            detector = root / 'detector.yaml'
+            base = root / 'base.yaml'
+            json_folder = root / 'json'
+            clip_folder = root / 'clip'
+            json_folder.mkdir()
+            clip_folder.mkdir()
+            (clip_folder / 'model.safetensors').touch()
+            detector.write_text(
+                yaml.safe_dump({
+                    'optimizer': {'type': 'adam', 'adam': {'lr': 0.1}},
+                }),
+                encoding='utf-8',
+            )
+            base.write_text('{}\n', encoding='utf-8')
+
+            with self.assertRaisesRegex(ValueError, 'effective batch size 16'):
+                build_formal_config(
+                    detector,
+                    base,
+                    json_folder,
+                    clip_folder,
+                    gpu_count=2,
+                    train_batch_size=4,
+                    gradient_accumulation_steps=1,
+                )
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -712,10 +712,14 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 
 - 论文公式的 MoA gate 在训练阶段加入噪声，并对全部 `N` 个专家输出加权求和；现有 planned 配置的 `top_k=2, noise=true` 既不等于论文公式，也不等于官方发布实现的 `top_k=4, noise=false`。
 - paper-spec 定义为论文明确内容优先、论文未说明项采用官方仓库默认。正式生成器和 paper-aligned detector 配置现固定 4 个专家、`top_k=4`、`noise=true`，并在 manifest 记录 MoE、epoch 与 AMP/batch 适配来源。
-- 提交 `71f1421`；完整测试 78 tests OK。旧 planned RUN_ID 已在训练前标为 `aborted`，没有正式训练 step 或 checkpoint。
-- 目标 3090 角色已有 FF++ 数据本体；FF++ JSON 与 pinned CLIP 已完成可恢复复制并逐文件 SHA-256 一致，未复制数据集本体。已验证环境正在使用 `conda-pack` 打包，目标端解包后必须运行 `conda-unpack` 和完整测试。
+- 提交 `71f1421`；初始完整测试 78 tests OK。旧 planned RUN_ID 已在训练前标为 `aborted`，没有正式训练 step 或 checkpoint。
+- 两个空间健康的 3090 候选均已有 FF++ 数据本体；FF++ JSON、pinned CLIP 与 `conda-pack` 环境包已完成可恢复复制和 SHA-256 校验，未复制数据集本体。环境解包后均完成 `conda-unpack`、核心依赖/CUDA 检查和全量测试。
+- 优先候选的一张空闲 3090 完成 paper-spec pinned-CLIP 单卡两批次 Smoke：loss 和必需梯度有限，optimizer 更新、冻结 backbone、checkpoint 原子写入与 round-trip 均通过；峰值 CUDA reserved 约 5.72 GiB。
+- 同一张卡的受限扫描确认 physical batch `8` 可完成两次训练 micro-batch，峰值 CUDA reserved 约 21.46 GiB；validation batch `32` 可完成 64 个样本，峰值 reserved 约 8.99 GiB。指标只作链路证据，不作研究解释。
+- 正式配置生成器现显式接收 GPU 数、每卡 batch、梯度累积和 validation batch，并拒绝有效 batch 不等于 `16` 的组合；默认 `1 x 2 x 8` 保持兼容，新增 `8 x 2 x 1` 与非法组合回归测试。完整测试为 80 tests OK，`git diff --check` 通过。
+- 3090 双卡队列只读取聚合 GPU 利用率/显存和当前用户可见存储；候选仍有活动负载时不抢占。详细节点名、内部路径、日志、资产哈希和报告只保存在 Git 外运行目录。
 
-下一步：完成环境迁移与目标端测试；等待空间健康的 3090 角色双卡空闲，依次执行 paper-spec 单/双卡 Smoke 和受限 batch 吞吐扫描。不得直接复用旧 RUN_ID 或旧 `top_k=2` checkpoint。
+下一步：等待空间健康的 3090 角色双卡空闲，执行 paper-spec 双卡 20-step Smoke，并按 `8/4/2/1` 顺序验证保持有效 batch `16` 的 DDP 吞吐配置。冻结最终 batch/workers 后合并本分支、创建新的 RUN_ID/config/manifest 并启动经批准的 20 epoch 正式训练。不得复用旧 RUN_ID 或旧 `top_k=2` checkpoint。
 
 ### T4.5 跨数据集最终评估
 
