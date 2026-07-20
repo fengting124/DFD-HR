@@ -157,10 +157,13 @@ def freeze_config(source_path, base_config_path, destination_path, run_dir):
     with open(base_config_path, encoding='utf-8') as file:
         base_config = yaml.safe_load(file) or {}
     config.update(base_config)
-    output_dir = Path(run_dir).resolve() / 'training'
+    run_dir = Path(run_dir).resolve()
+    output_dir = run_dir / 'training'
     config.update({
+        'run_id': run_dir.name,
         'log_dir': str(output_dir),
         'logdir': str(output_dir),
+        'metrics_jsonl': str(run_dir / 'metrics.jsonl'),
         'save_feat': False,
         'save_ckpt': True,
     })
@@ -426,7 +429,9 @@ def verify_run(args):
         raise ValueError('Manifest RUN_ID does not match its directory.')
     with (run_dir / 'config.resolved.yaml').open(encoding='utf-8') as file:
         config = yaml.safe_load(file)
-    for key in ('log_dir', 'logdir'):
+    if config.get('run_id') != args.run_id:
+        raise ValueError('Resolved config RUN_ID does not match its directory.')
+    for key in ('log_dir', 'logdir', 'metrics_jsonl'):
         if not is_within(config[key], run_dir):
             raise ValueError(f'Resolved config {key} must stay inside the run directory.')
     if config.get('save_feat', True) or not config.get('save_ckpt', False):

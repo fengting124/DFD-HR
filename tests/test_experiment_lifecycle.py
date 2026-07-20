@@ -62,7 +62,9 @@ class ExperimentLifecycleTests(unittest.TestCase):
             self.assertEqual(config['label_dict'], {'real': 0})
             self.assertFalse(config['save_feat'])
             self.assertTrue(config['save_ckpt'])
+            self.assertEqual(config['run_id'], 'run')
             self.assertEqual(Path(config['log_dir']), (root / 'run/training').resolve())
+            self.assertEqual(Path(config['metrics_jsonl']), root / 'run/metrics.jsonl')
             self.assertEqual(yaml.safe_load(destination.read_text()), config)
 
     def test_checksums_detect_file_changes(self):
