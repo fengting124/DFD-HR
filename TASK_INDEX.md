@@ -43,7 +43,7 @@ git log --oneline --decorate -12
 
 Current task branch: `infra/jupyter-standard`
 
-Active task: T3.1 and the minimal part of T3.2
+Current task: T3.1 is blocked; the minimal part of T3.2 remains TODO
 
 ## 3. 当前里程碑
 
@@ -349,13 +349,24 @@ checksums.sha256
 
 ### T3.1 注册现有环境为 Kernel
 
-**状态：TODO**
+**状态：BLOCKED**
 
 - [ ] 确认 `ipykernel`。
 - [ ] 注册稳定显示名。
 - [ ] Kernel 必须指向现有 DFD-HR Conda Python。
 - [ ] Jupyter runtime/config 放入当前用户运行目录。
 - [ ] Server 仅监听 localhost，经 SSH 隧道访问。
+
+阻塞证据（2026-07-20）：
+
+- 既有 `${DFDHR_PYTHON}` 可执行，PyTorch `2.3.1+cu121`、CUDA runtime `12.1`、CUDA available，GPU count `2`。
+- `${DFDHR_PYTHON} -m ipykernel --version` 返回 `No module named ipykernel`。
+- `${DFDHR_PYTHON} -m jupyter --version` 和 kernelspec 查询均返回 `No module named jupyter`。
+- 按当前任务边界未安装软件，未使用系统 Python 替代，未注册 Kernel，未启动 Jupyter。
+
+提交：本分支的 Jupyter 能力检查与阻塞状态提交。
+
+下一步：取得明确安装批准后，在既有 DFD-HR 环境中补齐 Jupyter/ipykernel，再重新执行 T3.1 全部验收；批准前不创建无法执行验证的 Notebook。
 
 ### T3.2 标准 Notebook
 
@@ -369,6 +380,8 @@ checksums.sha256
 - [ ] `05_training_monitor.ipynb`
 
 源 Notebook 进入 Git；执行后的副本和大型输出进入 `${DFDHR_RUNTIME_ROOT}`。Notebook 必须 Restart Kernel 后 Run All 成功。
+
+当前依赖：`00_environment_and_paths.ipynb` 的创建和执行验证等待 T3.1 提供可用的 `dfd-hr` Kernel；其余 Notebook 继续保持 TODO，并按各自正确性任务处理。
 
 ## P4：Smoke Test 与正式复现
 
