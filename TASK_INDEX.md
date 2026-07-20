@@ -640,6 +640,7 @@ Pinned CLIP 资产落地：**DONE**。完成证据（2026-07-20）：
 - 资产通过 `tmux` 中的可恢复传输复制到 `additional 3090 candidate C`；目标端重新执行大小、SHA-256、必要文件和完全离线加载校验，结果一致。
 - 补充检查确认一个 2 × RTX 2080 Ti 候选采样时空闲、环境存在且空间充足；一个 4 × RTX 2080 Ti 候选环境和空间存在但四卡均满载。当前不向二者追加复制：controller node 本身已是可用的 2 卡 2080 Ti 回退，4 卡候选未满足 GPU 可用门槛。
 - Git 外证据：`.local/asset_sources.yaml`、`.local/asset_transfer_plan.yaml`、下载/复制日志和逐节点原始审计；公开记录保持匿名。
+- 提交：`926f9d5`（pinned CLIP 落地、复制和节点选择结果）。
 - 未复制数据集、Conda 环境或官方 DFD-HR checkpoint；未安装软件、修改系统配置、运行 GPU benchmark、Smoke、Mini Run 或正式训练。
 
 下一步：优先协调 `additional 3090 candidate C` 的连续双卡预约；获得单独批准后，使用 pinned CLIP 和正式候选配置执行有限 pretrained initialization Smoke。若无法预约 3090，则在 controller node 的 2 × RTX 2080 Ti 上执行同一 Smoke；4 × RTX 2080 Ti 候选仅在四卡明确释放后重新评估。
