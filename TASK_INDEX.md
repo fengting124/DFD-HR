@@ -718,8 +718,12 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 - 同一张卡的受限扫描确认 physical batch `8` 可完成两次训练 micro-batch，峰值 CUDA reserved 约 21.46 GiB；validation batch `32` 可完成 64 个样本，峰值 reserved 约 8.99 GiB。指标只作链路证据，不作研究解释。
 - 正式配置生成器现显式接收 GPU 数、每卡 batch、梯度累积和 validation batch，并拒绝有效 batch 不等于 `16` 的组合；默认 `1 x 2 x 8` 保持兼容，新增 `8 x 2 x 1` 与非法组合回归测试。完整测试为 80 tests OK，`git diff --check` 通过。
 - 3090 双卡队列只读取聚合 GPU 利用率/显存和当前用户可见存储；候选仍有活动负载时不抢占。详细节点名、内部路径、日志、资产哈希和报告只保存在 Git 外运行目录。
+- 一个双卡空闲但存储余量较低的 3090 角色仅用于临时门禁：补齐 pinned CLIP 后哈希和完全离线加载通过，目标环境 80 tests OK；未复制数据集或环境。该角色门禁前后仍有约 80 GiB 可用，不承担长期归档。
+- Paper-spec 双卡 Smoke 每 rank 固定 20 steps，参数同步、rank-local RNG、必需梯度、rank-zero 广播、checkpoint round-trip 和进程组销毁全部通过；每卡峰值 CUDA reserved 约 6.23 GiB，提交绑定 `d7dc523`。
+- 双卡 physical batch `8`、累积 `1` 的受限门禁完成每 rank 4 个训练 micro-batch，并使用 validation batch `32` 完成 64 个验证样本；有效 batch 精确为 `16`，稳定训练 step 约 3.09 秒，峰值 CUDA reserved 约 21.84 GiB。workers `4` 在预热后 data time 接近零，无需增加。
+- 最终 3090 配置冻结为每卡 batch `8`、累积 `1`、validation batch `32`、每 rank workers `4`；这比梯度累积回退更接近论文 physical batch 16。受限指标只证明链路，不作研究解释，门禁未写正式 checkpoint。
 
-下一步：等待空间健康的 3090 角色双卡空闲，执行 paper-spec 双卡 20-step Smoke，并按 `8/4/2/1` 顺序验证保持有效 batch `16` 的 DDP 吞吐配置。冻结最终 batch/workers 后合并本分支、创建新的 RUN_ID/config/manifest 并启动经批准的 20 epoch 正式训练。不得复用旧 RUN_ID 或旧 `top_k=2` checkpoint。
+下一步：审查并合并 `fix/paper-spec-alignment`，从更新后的 `main` 创建新的正式 RUN_ID/config/manifest。优先使用队列中空间健康且双卡空闲的 3090；若仍被占用，可在已通过门禁的临时 3090 角色启动并持续监控剩余空间，空间低于运行预算和安全余量时不得启动。不得复用旧 RUN_ID 或旧 `top_k=2` checkpoint。
 
 ### T4.5 跨数据集最终评估
 
