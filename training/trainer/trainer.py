@@ -108,6 +108,8 @@ class Trainer(object):
 
     @staticmethod
     def _metric_number(value):
+        if value is None:
+            return None
         if isinstance(value, torch.Tensor):
             if value.numel() != 1:
                 raise ValueError('structured scalar metrics must contain exactly one value')

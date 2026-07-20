@@ -98,7 +98,7 @@ class StructuredMetricsTests(unittest.TestCase):
                 iteration=0,
                 global_step=7,
                 losses={'overall': torch.tensor(0.25)},
-                batch_metrics={'acc': 0.75},
+                batch_metrics={'acc': 0.75, 'auc': None},
                 step_time=0.2,
                 data_time=0.1,
             )
@@ -107,6 +107,7 @@ class StructuredMetricsTests(unittest.TestCase):
             self.assertEqual(event['event'], 'train_batch')
             self.assertEqual(event['global_step'], 7)
             self.assertEqual(event['loss'], 0.25)
+            self.assertIsNone(event['metrics']['auc'])
             self.assertEqual(event['learning_rate'], 0.001)
             self.assertEqual(event['effective_batch_size'], 16)
             self.assertIn('disk_free_bytes', event)
