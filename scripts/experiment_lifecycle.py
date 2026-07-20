@@ -259,6 +259,8 @@ def initialize_run(args):
             raise ValueError(f'{name} must be positive.')
     if args.workers < 0:
         raise ValueError('workers cannot be negative.')
+    if args.initial_weight_kind == 'clip_pretrained' and not args.initial_weight:
+        raise ValueError('clip_pretrained initialization requires --initial-weight.')
     paths = require_environment()
     repo_root = paths['DFDHR_REPO_ROOT']
     if git_output(repo_root, 'status', '--short'):
@@ -367,10 +369,16 @@ def initialize_run(args):
         'checkpoint_roundtrip_passed': args.checkpoint_roundtrip_passed,
         'ddp_smoke_passed': args.ddp_smoke_passed,
     })
+    is_dfd_checkpoint = bool(
+        args.initial_weight and args.initial_weight_kind == 'dfd_checkpoint'
+    )
     manifest['initialization'].update({
         'clip_pretrained': bool(config.get('backbone_pretrained', True)),
-        'dfd_hr_checkpoint': str(Path(args.initial_weight).resolve()) if args.initial_weight else None,
-        'independent_reproduction': not bool(args.initial_weight),
+        'dfd_hr_checkpoint': (
+            str(Path(args.initial_weight).resolve()) if is_dfd_checkpoint else None
+        ),
+        'independent_reproduction': not is_dfd_checkpoint,
+        'initial_weight_kind': args.initial_weight_kind if args.initial_weight else None,
     })
     assert_resolved(manifest)
     atomic_write_text(
@@ -558,6 +566,11 @@ def build_parser():
     init_parser.add_argument('--base-config', required=True)
     init_parser.add_argument('--dataset-json', required=True)
     init_parser.add_argument('--initial-weight')
+    init_parser.add_argument(
+        '--initial-weight-kind',
+        choices=('dfd_checkpoint', 'clip_pretrained'),
+        default='dfd_checkpoint',
+    )
     init_parser.add_argument('--objective', required=True)
     init_parser.add_argument('--hypothesis', required=True)
     init_parser.add_argument('--success-criterion', action='append', required=True)
