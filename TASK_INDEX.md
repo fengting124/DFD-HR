@@ -630,6 +630,7 @@ checksums.sha256
 - `additional 3090 candidate D` 的 FF++ 数据 30/30 路径存在且约 1.56 TiB 可用，但采样时两卡满载，环境、JSON 和 pinned CLIP 缺失。结论 `BLOCKED_BY_GPU / ENVIRONMENT / CLIP`。
 - 原 `3090 candidate A/B` 与 `evaluation node` 的新鲜状态和既有结论一致；所有五个指定候选均缺 pinned CLIP，因此没有节点达到可立即启动正式训练的状态。
 - Git 外证据：`.local/candidate_comparison_latest.yaml` 和受控 raw audit 目录；公开报告只增加匿名角色，不记录真实节点名、内部路径、端口或进程信息。
+- 提交：`3c10c94`（候选比较与脱敏报告更新）。
 - 本轮未安装软件、未复制数据或权重、未修改系统配置、未运行 benchmark、Smoke、Mini Run 或完整训练。
 
 下一步：在 controller node 与 `additional 3090 candidate C` 之间确认连续 GPU 预约；随后等待批准 1，在最终选定节点下载或复制 pinned CLIP snapshot。批准 1 只允许资产落地与 revision/size/SHA-256/必要文件校验，不包含节点环境准备、pretrained Smoke 或完整训练；后续批准 2、3、4 仍需分别取得。
