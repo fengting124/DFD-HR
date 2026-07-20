@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `fix/validation-protocol`
+Current task branch: `fix/final-test-metrics`
 
-Completed scope: T2.1 explicit validation protocol
+Completed scope: T2.2 final test metrics
 
-Next task branch: `fix/final-test-metrics`
+Next task branch: `feat/amp-grad-accum`
 
 ## 3. 当前里程碑
 
@@ -322,11 +322,25 @@ checksums.sha256
 
 ### T2.2 最终测试指标
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] `save_best=False` 时返回本次测试指标。
-- [ ] 保存数据集级和平均指标为稳定 JSON。
-- [ ] 增加回归测试。
+- [x] `save_best=False` 时返回本次测试指标。
+- [x] 保存数据集级和平均指标为稳定 JSON。
+- [x] 增加回归测试。
+
+完成证据（2026-07-20）：
+
+- `Trainer.test_epoch(..., save_best=False)` 返回本次测试的数据集级指标和 `avg`，不再返回历史 `best_metrics_all_time`。
+- 最终测试报告原子写入 `${log_dir}/test/metrics.json`，schema version 为 `1`，包含 `phase`、`metric_scoring`、`datasets` 和 `average`。
+- JSON 报告排除逐样本 `pred`/`label` 数组，并将 NumPy scalar 转为稳定的原生 JSON 数值。
+- validation 的 `save_best=True` checkpoint 选择和既有 best metric 保存行为未改变。
+- 回归测试使用临时运行目录和 mock 数据验证当前指标返回、数据集/平均 JSON 内容及历史 best 隔离；未加载模型或数据集。
+- 完整测试为 13 tests OK；Python 编译、`git diff --check` 和敏感信息扫描通过。
+- 本任务未启动训练，未修改数据、权重、系统或 CUDA 配置。
+
+提交：`2311869`（失败回归测试）、`4e523e4`（当前指标返回和 JSON 持久化）。
+
+下一步：合并本分支后从更新的 `main` 创建 `feat/amp-grad-accum`，完成 T2.3；结构化逐 step `metrics.jsonl` 仍属于后续运行基础设施，不以本次最终指标 JSON 代替。
 
 ### T2.3 AMP 与梯度累积
 
