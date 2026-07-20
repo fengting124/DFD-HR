@@ -51,6 +51,12 @@ class TrainHelpersTests(unittest.TestCase):
 
         self.assertEqual(args.validation_dataset, ["FaceForensics++"])
 
+    def test_parse_args_accepts_resume_checkpoint(self):
+        with patch.object(sys, "argv", ["train.py", "--resume", "last.pth"]):
+            args = train.parse_args()
+
+        self.assertEqual(args.resume, "last.pth")
+
 
 if __name__ == "__main__":
     unittest.main()

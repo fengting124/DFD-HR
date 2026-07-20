@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `feat/amp-grad-accum`
+Current task branch: `feat/checkpoint-resume`
 
-Completed scope: T2.3 AMP and gradient accumulation
+Completed scope: T2.4 recoverable checkpoints
 
-Next task branch: `feat/checkpoint-resume`
+Next task branch: `fix/ddp-validation-sync`
 
 ## 3. 当前里程碑
 
@@ -369,12 +369,27 @@ checksums.sha256
 
 ### T2.4 可恢复 checkpoint
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] 保存/恢复 model、optimizer、scheduler、epoch、best metrics、GradScaler、RNG。
-- [ ] 原子写入。
-- [ ] 默认仅保留 best/last。
-- [ ] checkpoint round-trip 测试。
+- [x] 保存/恢复 model、optimizer、scheduler、epoch、best metrics、GradScaler、RNG。
+- [x] 原子写入。
+- [x] 默认仅保留 best/last。
+- [x] checkpoint round-trip 测试。
+
+完成证据（2026-07-20）：
+
+- 完整训练 checkpoint 保存并严格恢复 model、optimizer、scheduler、已完成 epoch、best metrics、GradScaler、配置及 Python/NumPy/Torch/CUDA RNG。
+- `--resume` 只接受完整训练 checkpoint，拒绝把仅含模型权重的官方 checkpoint 误作训练恢复点；恢复后从 `epoch + 1` 继续。
+- checkpoint 先写同目录临时文件，再通过 `os.replace` 原子提交；测试确认完成后无残留 `.tmp`。
+- validation 只保留 `avg` best，训练每个 epoch 覆盖单一 `checkpoints/ckpt_last.pth`；`--no-save_ckpt` 同时禁止 best 和 last。
+- DDP 下 last 仅由 rank 0 写入；跨 rank barrier 与验证同步仍由 T2.5 完成。
+- round-trip 测试验证模型参数、optimizer momentum、scheduler、Scaler、best metrics、下一 epoch、四类 RNG 及 best/last 文件集合。
+- 完整测试为 24 tests OK；Python 编译、`git diff --check` 和敏感信息扫描通过。
+- 测试只使用临时目录、微型线性层和合成张量，未加载项目模型或数据，未启动实验训练。
+
+提交：`4812ef2`（失败 round-trip 合同测试）、`4525284`（原子完整状态保存与恢复）。
+
+下一步：合并本分支后从更新的 `main` 创建 `fix/ddp-validation-sync`，完成 T2.5 的 rank 对齐和两进程有限 Smoke。
 
 ### T2.5 DDP 验证同步
 

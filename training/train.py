@@ -43,6 +43,7 @@ parser.add_argument('--detector_path', type=str,
 parser.add_argument("--train_dataset", nargs="+")
 parser.add_argument("--validation_dataset", nargs="+")
 parser.add_argument("--test_dataset", nargs="+")
+parser.add_argument("--resume", type=str)
 parser.add_argument('--no-save_ckpt', dest='save_ckpt', action='store_false', default=True)
 parser.add_argument('--no-save_feat', dest='save_feat', action='store_false', default=True)
 parser.add_argument("--ddp", action='store_true', default=False)
@@ -291,6 +292,8 @@ def main():
 
     # prepare the trainer
     trainer = Trainer(config, model, optimizer, scheduler, logger, metric_scoring)
+    if args.resume:
+        config['start_epoch'] = trainer.resume_from_checkpoint(args.resume)
 
     # start training
     best_metric = None
@@ -308,6 +311,8 @@ def main():
             scheduler.step()
         if best_metric is not None:
             logger.info(f"===> Epoch[{epoch}] end with validation {metric_scoring}: {parse_metric_for_print(best_metric)}!")
+        if config['save_ckpt'] and (not config['ddp'] or dist.get_rank() == 0):
+            trainer.save_last_ckpt(epoch)
     logger.info("Stop Training on best validation metric {}".format(parse_metric_for_print(best_metric)))
 
     best_validation_ckpt = os.path.join(trainer.log_dir, 'val', 'avg', 'ckpt_best.pth')
