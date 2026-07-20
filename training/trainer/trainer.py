@@ -97,7 +97,13 @@ class Trainer(object):
 
         self.gradient_accumulation_steps = accumulation_steps
         self.amp_enabled = amp_requested and self.device.type == 'cuda'
-        self.scaler = torch.cuda.amp.GradScaler(enabled=self.amp_enabled)
+        amp_initial_scale = float(self.config.get('amp_initial_scale', 2**16))
+        if not np.isfinite(amp_initial_scale) or amp_initial_scale <= 0:
+            raise ValueError('amp_initial_scale must be a positive finite number')
+        self.scaler = torch.cuda.amp.GradScaler(
+            enabled=self.amp_enabled,
+            init_scale=amp_initial_scale,
+        )
         world_size = (
             dist.get_world_size()
             if self.config.get('ddp', False) and dist.is_available() and dist.is_initialized()
@@ -221,7 +227,9 @@ class Trainer(object):
                 "=> no model found at '{}'".format(model_path))
 
     def resume_from_checkpoint(self, checkpoint_path):
-        saved = torch.load(checkpoint_path, map_location=self.device)
+        # Keep RNG and metadata tensors on CPU; state_dict loaders move parameter
+        # and optimizer tensors to their owning device without corrupting RNG state.
+        saved = torch.load(checkpoint_path, map_location='cpu')
         required_keys = {
             'state_dict',
             'optimizer',
@@ -399,7 +407,13 @@ class Trainer(object):
         os.replace(temporary_path, report_path)
         self.logger.info(f"Current metrics saved to {report_path}")
 
-    def train_step(self, data_dict, should_step=True, accumulation_divisor=1):
+    def train_step(
+        self,
+        data_dict,
+        should_step=True,
+        accumulation_divisor=1,
+        gradient_observer=None,
+    ):
         if self.config['optimizer']['type']=='sam':
             if not should_step or accumulation_divisor != 1:
                 raise ValueError('SAM does not support gradient accumulation')
@@ -432,6 +446,8 @@ class Trainer(object):
             self.scaler.scale(scaled_loss).backward()
             if should_step:
                 self.scaler.unscale_(self.optimizer)
+                if gradient_observer is not None:
+                    gradient_observer(self.model)
                 self._ensure_finite_gradients()
                 self.scaler.step(self.optimizer)
                 self.scaler.update()

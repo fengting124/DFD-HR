@@ -95,7 +95,8 @@ class MoEAdapter(nn.Module):
                     continue
                     
                 # Apply gate weight
-                weighted_result = expert_result[weight_mask] * gates[expert_mask][weight_mask, j].unsqueeze(1)
+                gate_weight = gates[expert_mask][weight_mask, j].to(expert_result.dtype)
+                weighted_result = expert_result[weight_mask] * gate_weight.unsqueeze(1)
                 expert_outputs[expert_mask] = expert_outputs[expert_mask].scatter_add(
                     0, 
                     torch.nonzero(weight_mask, as_tuple=False).expand(-1, self.D_features),

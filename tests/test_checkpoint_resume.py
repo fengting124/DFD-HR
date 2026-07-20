@@ -6,6 +6,7 @@ import unittest
 from collections import defaultdict
 from pathlib import Path
 from unittest.mock import Mock
+from unittest.mock import patch
 
 import numpy as np
 import torch
@@ -137,6 +138,18 @@ class CheckpointResumeTests(unittest.TestCase):
 
             with self.assertRaisesRegex(ValueError, "full training checkpoint"):
                 trainer.resume_from_checkpoint(weight_path)
+
+    def test_resume_loads_checkpoint_on_cpu(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            trainer = self.make_trainer(temp_dir)
+            checkpoint_path = trainer.save_last_ckpt(epoch=0)
+            real_load = torch.load
+
+            with patch('trainer.trainer.torch.load') as mocked_load:
+                mocked_load.side_effect = real_load
+                trainer.resume_from_checkpoint(checkpoint_path)
+
+            self.assertEqual(mocked_load.call_args.kwargs['map_location'], 'cpu')
 
 
 if __name__ == "__main__":

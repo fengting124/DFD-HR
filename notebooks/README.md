@@ -74,3 +74,9 @@ export DFDHR_AUDIT_EXTERNAL_DATASET=DFDC
 ```
 
 The audit parses registry JSON but never walks the dataset directory tree or decodes images.
+
+## Single-GPU smoke test
+
+`03_single_gpu_memory_smoke.ipynb` invokes the bounded smoke harness once for FP32 and once for AMP. Each process reads exactly two class-balanced FaceForensics++ samples with micro-batch 1 and no augmentation, then verifies unscaled gradients and a complete checkpoint round-trip. Reports, logs, and checkpoints remain under `${DFDHR_RUNTIME_ROOT}/jupyter-validation/`.
+
+This notebook performs optimizer steps, but never enters the epoch training loop. It is a correctness and capacity check, not a research experiment or training result.
