@@ -11,8 +11,9 @@
 ```bash
 git status --short --branch
 git fetch --all --prune
-git switch docs/experiment-workflow
+git switch main
 git pull --ff-only
+git switch <当前任务分支>
 git log --oneline --decorate -12
 ```
 
@@ -39,6 +40,10 @@ git log --oneline --decorate -12
 - `BLOCKED`：存在已记录阻塞。
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
+
+Current task branch: `infra/jupyter-standard`
+
+Active task: T3.1 and the minimal part of T3.2
 
 ## 3. 当前里程碑
 
@@ -215,13 +220,23 @@ DFD-HR 就绪性：
 
 ### T0.7 生成脱敏结果报告
 
-**状态：TODO**
+**状态：DONE**
 
 目标：`docs/controller_migration_and_node_audit_results.md`
 
 允许：时间戳、匿名节点角色、通用硬件、当前用户可见容量、数据/环境就绪状态、调度建议。
 
 禁止：真实服务器名、IP/端口、其他用户身份/PID/目录大小、SSH 配置、凭据、内部绝对路径。
+
+完成证据：
+
+- 报告：`docs/controller_migration_and_node_audit_results.md`
+- 任务提交：`75ea940`
+- 报告提交：`e236846`
+- 合并 PR：`#1`
+- `main` 合并提交：`fc37a2f`
+
+下一步：基础设施审计已收口；新增节点就绪性作为独立任务处理，不阻塞控制节点上的 Jupyter 标准化和代码正确性修复。
 
 ## P1：标准化实验基础设施
 
