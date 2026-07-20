@@ -43,6 +43,36 @@ class MiniRunConfigTests(unittest.TestCase):
             self.assertFalse(config['save_feat'])
             self.assertEqual(config['dataset_json_folder'], str(json_folder.resolve()))
 
+    def test_builder_supports_pinned_local_clip_initialization(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            detector = root / 'detector.yaml'
+            base = root / 'base.yaml'
+            json_folder = root / 'json'
+            clip_folder = root / 'clip'
+            json_folder.mkdir()
+            clip_folder.mkdir()
+            (clip_folder / 'model.safetensors').touch()
+            detector.write_text(
+                yaml.safe_dump({'model_name': 'dfd_hr'}),
+                encoding='utf-8',
+            )
+            base.write_text('{}\n', encoding='utf-8')
+
+            config = build_mini_config(
+                detector,
+                base,
+                json_folder,
+                clip_model_path=clip_folder,
+            )
+
+            self.assertTrue(config['backbone_pretrained'])
+            self.assertTrue(config['backbone_local_files_only'])
+            self.assertEqual(config['initialization_mode'], 'pinned_clip_pretrained')
+            self.assertEqual(
+                config['backbone_pretrained_path'], str(clip_folder.resolve())
+            )
+
 
 if __name__ == '__main__':
     unittest.main()

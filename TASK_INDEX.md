@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `test/pretrained-clip-smoke`
+Current task branch: `exp/pretrained-mini-run`
 
-Completed scope: pinned CLIP single- and two-GPU Smoke on fallback node
+Completed scope: recoverable pinned CLIP Mini Run on fallback node
 
-Next task branch: `exp/pretrained-mini-run` after PR #18 is reviewed and merged
+Next task branch: full-reproduction freeze after final node reservation and explicit approval
 
 ## 3. 当前里程碑
 
@@ -601,7 +601,7 @@ checksums.sha256
 
 ### T4.4 完整训练
 
-**状态：BLOCKED by pretrained Mini Run and formal-training approval**
+**状态：BLOCKED by final node reservation and formal-training approval**
 
 从 CLIP 初始化开始，不加载发布的 DFD-HR 权重。使用验证集选择 best，并维护可恢复 last。
 
@@ -661,6 +661,21 @@ Pretrained initialization Smoke：**DONE on fallback node**。完成证据（202
 - 未复制新资产、安装软件、修改系统配置、运行 Mini Run 或正式训练。
 
 下一步：审查并合并 PR `#18`，从更新后的 `main` 创建 `exp/pretrained-mini-run`；冻结 pinned CLIP 初始化、micro-batch `1`、有效 batch 和小型确定性 FF++ train/validation/test 子集，先完成可恢复 pretrained Mini Run。首选 3090 候选仍需连续双卡预约；预约未落实时可在已验证的 2 卡 2080 Ti 回退角色执行 Mini Run，但不得直接启动完整训练。
+
+Pretrained Mini Run：**DONE on fallback node**。完成证据（2026-07-20）：
+
+- 提交 `bafe451` 为 Mini 配置生成器增加显式 pinned CLIP 本地离线初始化，并修复 lifecycle manifest 对 `clip_pretrained` 与 `dfd_checkpoint` 初始权重类型的区分；完整测试为 60 tests OK。
+- RUN_ID `dfdhr_ffppc23_mini-pretrained_20260720_001` 绑定干净提交 `bafe451`；manifest 为 `clip_pretrained=true`、`dfd_hr_checkpoint=null`、`independent_reproduction=true`，初始权重 SHA-256 为 `a2bf730a0c7debf160f7a6b50b3aaf3703e7e88ac73de7a314903141db026dcb`。
+- 使用固定平衡 FF++ c23 train/validation/test `16/8/8` 样本，1 epoch、单卡 AMP、micro-batch `1`、累积 `16`、有效 batch `16`、seed `1024`；未加载官方 DFD-HR checkpoint。
+- 正常产生 16 个 train、1 个 validation 和 1 个首次 final-test 结构化事件；validation frame/video AUC 为 `0.875/0.875`，有限 final-test frame/video AUC 为 `0.625/0.625`。这些小样本指标只验证链路，不作为研究结果。
+- 峰值 CUDA allocated `5858192384` bytes，平均 train step time 约 `1.5382s`；运行目录约 4.6 GiB，满足 8 GiB manifest 预算。
+- best/last 均为 `2465259268` bytes，SHA-256 分别为 `2511c360cc5cb97fdb23d8b5be5d382fdcc0599b108b37563d7b0f8446665f2c` 和 `7739cfb5293d28005d602e1cfe6c707dfad7d5fb420e41bd6c286c77dd43ade5`，无临时 checkpoint 残留。
+- 独立恢复进程从 last 恢复到 next epoch `1`；恢复前后 train/validation 事件保持 `16/1`，未新增训练 epoch，只新增一次结果一致的 final-test 事件。完成后 GPU 释放，checksums、路径保护和本地预算再次通过。
+- lifecycle status 为 `completed`，summary 已补全，archive 仅 dry-run，runtime 源目录保留；脱敏 registry 已登记完成行。
+- Git 外证据：完整 manifest、冻结配置、命令、环境、日志、结构化指标、summary、best/last、恢复日志和 checksums；不提交内部绝对路径或执行后产物。
+- 未复制新资产、安装软件、修改系统配置、执行完整数据集评估或启动正式训练。
+
+下一步：确定正式训练节点和连续 GPU 时段。首选 3090 角色仍具备完整资产和空间但需预约；已验证的 2 卡 2080 Ti 回退角色可以运行 micro-batch `1`，但预计更慢。获得正式训练批准后再建立冻结 RUN_ID/config/manifest，执行最后一次 GPU、存储、数据 JSON、pinned CLIP 和输出预算 Preflight；未批准前不得启动完整 20 epoch 训练。
 
 ### T4.5 跨数据集最终评估
 

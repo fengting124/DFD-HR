@@ -14,14 +14,31 @@ def is_within(path, root):
         return False
 
 
-def build_mini_config(detector_path, base_config_path, dataset_json_folder):
+def build_mini_config(
+    detector_path,
+    base_config_path,
+    dataset_json_folder,
+    clip_model_path=None,
+):
     with open(base_config_path, encoding='utf-8') as file:
         config = yaml.safe_load(file) or {}
     with open(detector_path, encoding='utf-8') as file:
         config.update(yaml.safe_load(file) or {})
-    config.update({
+    initialization = {
         'backbone_pretrained': False,
         'initialization_mode': 'architecture_only_random',
+    }
+    if clip_model_path:
+        clip_model_path = Path(clip_model_path).resolve()
+        if not (clip_model_path / 'model.safetensors').is_file():
+            raise ValueError('clip_model_path must contain model.safetensors.')
+        initialization = {
+            'backbone_pretrained': True,
+            'backbone_pretrained_path': str(clip_model_path),
+            'backbone_local_files_only': True,
+            'initialization_mode': 'pinned_clip_pretrained',
+        }
+    config.update({
         'dataset_json_folder': str(Path(dataset_json_folder).resolve()),
         'train_dataset': ['FaceForensics++'],
         'validation_dataset': ['FaceForensics++'],
@@ -45,6 +62,7 @@ def build_mini_config(detector_path, base_config_path, dataset_json_folder):
         'save_avg': True,
         'dry_run': False,
     })
+    config.update(initialization)
     return config
 
 
@@ -56,6 +74,7 @@ def parse_args():
     parser.add_argument('--output', required=True)
     parser.add_argument('--repo-root', required=True)
     parser.add_argument('--data-root', required=True)
+    parser.add_argument('--clip-model-path')
     return parser.parse_args()
 
 
@@ -69,6 +88,7 @@ def main():
         args.detector_path,
         args.base_config_path,
         args.dataset_json_folder,
+        args.clip_model_path,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(
