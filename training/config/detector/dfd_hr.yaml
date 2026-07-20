@@ -23,14 +23,14 @@ backbone_config:
 # dataset
 all_dataset: [FaceForensics++, Celeb-DF-v2, FaceShifter, DeepFakeDetection, DFDC, DFDCP, test_DFR, test_WDF, test_FFIW, uniface_ff, blendface_ff, mobileswap_ff, e4s_ff, facedancer_ff, fsgan_ff, inswap_ff, simswap_ff]
 train_dataset: [FaceForensics++]
-validation_dataset: []
+validation_dataset: [FaceForensics++]
 test_dataset: [Celeb-DF-v2, FaceShifter, DeepFakeDetection, DFDC, DFDCP, test_DFR, test_WDF, test_FFIW, uniface_ff, blendface_ff, mobileswap_ff, e4s_ff, facedancer_ff, fsgan_ff, inswap_ff, simswap_ff]
 
 compression: c23  # compression-level for videos
 train_batchSize: 16   # training batch size
 test_batchSize: 32 # 1   # test batch size
 workers: 8   # number of data loading workers
-frame_num: {'train': 8, 'test': 8}   # number of frames to use per video in training and testing
+frame_num: {'train': 8, 'val': 32, 'test': 8}   # number of frames to use per video in training and testing
 resolution: 448  # resolution of output image to network
 with_mask: false   # whether to include mask information in the input
 with_landmark: false   # whether to include facial landmark information in the input
