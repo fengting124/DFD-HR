@@ -43,9 +43,9 @@ git log --oneline --decorate -12
 
 Current task branch: `test/pretrained-clip-smoke`
 
-Completed scope: pinned CLIP initialization support for bounded single/DDP Smoke
+Completed scope: pinned CLIP single- and two-GPU Smoke on fallback node
 
-Next task branch: remain on current branch until pretrained Smoke evidence is complete
+Next task branch: `exp/pretrained-mini-run` after PR #18 is reviewed and merged
 
 ## 3. 当前里程碑
 
@@ -601,7 +601,7 @@ checksums.sha256
 
 ### T4.4 完整训练
 
-**状态：BLOCKED by GPU reservation, pretrained Smoke approval, and formal-training approval**
+**状态：BLOCKED by pretrained Mini Run and formal-training approval**
 
 从 CLIP 初始化开始，不加载发布的 DFD-HR 权重。使用验证集选择 best，并维护可恢复 last。
 
@@ -645,16 +645,22 @@ Pinned CLIP 资产落地：**DONE**。完成证据（2026-07-20）：
 
 下一步：优先协调 `additional 3090 candidate C` 的连续双卡预约；获得单独批准后，使用 pinned CLIP 和正式候选配置执行有限 pretrained initialization Smoke。若无法预约 3090，则在 controller node 的 2 × RTX 2080 Ti 上执行同一 Smoke；4 × RTX 2080 Ti 候选仅在四卡明确释放后重新评估。
 
-Pretrained initialization Smoke：**BLOCKED_BY_CURRENT_GPU_USE**。当前证据（2026-07-20）：
+Pretrained initialization Smoke：**DONE on fallback node**。完成证据（2026-07-20）：
 
 - 提交 `7fd60a6` 为单卡两批次和双卡 20-step Smoke 增加显式本地 pinned CLIP 初始化；该路径与 DFD-HR checkpoint 加载互斥，强制 Transformers 离线读取 safetensors，并在报告中记录初始化类型、大小、SHA-256 和 `dfd_checkpoint_loaded=false`。
 - 旧的 DFD-HR checkpoint Smoke 参数和来源报告字段保持兼容；mocked loader 测试确认显式本地路径、`local_files_only=True` 和 `use_safetensors=True` 均传入 Transformers。
-- `controller node` 与 `additional 3090 candidate C` 的现有环境分别运行 59 tests，全部通过；候选节点绑定干净提交 `7fd60a6`，数据、JSON、pinned CLIP 和约 2.71 TiB 可用空间仍满足。
-- 用户已批准在首选 3090 候选推进下一阶段；启动门禁在独立 `tmux` 中按 60 秒间隔执行五次聚合采样。一张卡持续 98-99% 利用率，另一张在 3-41% 波动，两卡显存均有既有占用，因此未达到连续两次稳定空闲条件。
-- 等待会话已停止并记录 `smoke_started=false`；Smoke 输出目录未创建，未实例化模型、未读取训练 batch、未写 checkpoint，也未读取进程明细或干扰现有任务。
-- Git 外证据：pretrained Smoke 审计日志和本地资产记录；公开记录保持匿名。草稿 PR 为 `#18`。
+- `controller node` 与 `additional 3090 candidate C` 的现有环境分别运行 59 tests，全部通过；代码提交 `7fd60a6`，草稿 PR 为 `#18`。
+- 首选 3090 候选按 60 秒间隔执行五次聚合采样，一张卡持续 98-99% 利用率，另一张在 3-41% 波动；等待会话停止并记录 `smoke_started=false`，未实例化模型、读取 batch 或写 checkpoint。
+- 新鲜全候选扫描确认 `controller node` 两张 RTX 2080 Ti 连续空闲，环境、数据、JSON、pinned CLIP 和约 981 GiB 空间齐全，因此按回退方案执行。另有一个 2 卡 2080 Ti 角色仅缺 CLIP；4 卡 2080 Ti 角色四卡均为 97-99% 利用率；空闲 3090 角色要么缺环境/JSON/CLIP，要么 scratch 使用率 98%。
+- 单卡 AMP 严格两批次 Smoke 使用 pinned CLIP、本地离线加载且 `dfd_checkpoint_loaded=false`；loss `0.5838524103/1.3313060999` 均有限，Adapter/Router/Head/Query 梯度有限，392 个冻结 backbone/projection 参数无梯度，optimizer 更新成功。
+- 单卡峰值 allocated/reserved 为 `6015711232/6211764224` bytes，step time `2.1014s/1.6530s`；完整 checkpoint `2465258820` bytes，原子写入、SHA-256 和 round-trip 均通过。
+- 双卡 NCCL Smoke 每 rank 固定 20 optimizer steps，micro-batch `1`、有效 batch `2`；两 rank 各 10 真/10 假，训练参数与必需梯度同步一致，rank-zero 广播、两份 rank-local RNG、checkpoint round-trip 和正常进程组销毁全部通过。
+- 双卡 rank 0/1 平均 step time 为 `2.0265s/2.0081s`，峰值 reserved 为 `6817841152/6798966784` bytes；last checkpoint `2465285656` bytes，SHA-256 `c5c49301443dc721dc0d74d5978f92a5c2219eba057defde67466a8285ecd2d2`，无临时文件残留。
+- 两项报告均绑定干净提交 `8d66d47`、相同 FF++ JSON SHA-256 和 pinned CLIP SHA-256 `a2bf730a0c7debf160f7a6b50b3aaf3703e7e88ac73de7a314903141db026dcb`；未加载官方 DFD-HR checkpoint。
+- Git 外证据：pretrained Smoke 单卡/DDP 报告、日志、checkpoint 和 `.local/idle_candidate_scan_latest.yaml`；公开记录保持匿名。
+- 未复制新资产、安装软件、修改系统配置、运行 Mini Run 或正式训练。
 
-下一步：确认 `additional 3090 candidate C` 的两卡现有任务结束或取得明确预约后，重新执行新鲜双样本空闲门禁；先运行单卡 AMP 两批次 pretrained Smoke，校验初始化哈希、梯度、冻结参数、显存和 checkpoint round-trip，再决定是否进入双卡 20-step pretrained DDP Smoke。不得直接启动 Mini Run 或完整训练。
+下一步：审查并合并 PR `#18`，从更新后的 `main` 创建 `exp/pretrained-mini-run`；冻结 pinned CLIP 初始化、micro-batch `1`、有效 batch 和小型确定性 FF++ train/validation/test 子集，先完成可恢复 pretrained Mini Run。首选 3090 候选仍需连续双卡预约；预约未落实时可在已验证的 2 卡 2080 Ti 回退角色执行 Mini Run，但不得直接启动完整训练。
 
 ### T4.5 跨数据集最终评估
 
