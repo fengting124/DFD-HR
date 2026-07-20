@@ -70,7 +70,8 @@ def resolve_local_rank(cli_local_rank, environment=None):
 
 
 def configure_cublas_workspace(config, environment=None):
-    if config.get('reproducibility_mode', 'seeded_best_effort') != 'deterministic':
+    mode = config.get('reproducibility_mode', 'seeded_best_effort')
+    if 'cublas_workspace_config' not in config and mode != 'deterministic':
         return None
     environment = os.environ if environment is None else environment
     workspace_config = config.get('cublas_workspace_config', ':4096:8')
