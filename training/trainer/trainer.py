@@ -4,6 +4,7 @@
 # description: trainer
 import os
 import sys
+import json
 current_file_path = os.path.abspath(__file__)
 parent_dir = os.path.dirname(os.path.dirname(current_file_path))
 project_root_dir = os.path.dirname(parent_dir)
@@ -201,6 +202,42 @@ class Trainer(object):
         with open(file_path, 'wb') as file:
             pickle.dump(metric_one_dataset, file)
         self.logger.info(f"Metrics saved to {file_path}")
+
+    @staticmethod
+    def _plain_metric_values(metric_values):
+        plain = {}
+        for key, value in metric_values.items():
+            if key in {'pred', 'label'}:
+                continue
+            if isinstance(value, dict):
+                plain[key] = Trainer._plain_metric_values(value)
+            elif isinstance(value, np.generic):
+                plain[key] = value.item()
+            elif value is None or isinstance(value, (str, int, float, bool)):
+                plain[key] = value
+            else:
+                raise TypeError(f"Metric {key!r} is not JSON serializable: {type(value).__name__}")
+        return plain
+
+    def save_metric_report(self, phase, current_metrics):
+        save_dir = os.path.join(self.log_dir, phase)
+        os.makedirs(save_dir, exist_ok=True)
+        report_path = os.path.join(save_dir, 'metrics.json')
+        temporary_path = report_path + '.tmp'
+        payload = {
+            'schema_version': 1,
+            'phase': phase,
+            'metric_scoring': self.metric_scoring,
+            'datasets': {
+                key: value for key, value in current_metrics.items() if key != 'avg'
+            },
+            'average': current_metrics.get('avg', {}),
+        }
+        with open(temporary_path, 'w', encoding='utf-8') as file:
+            json.dump(payload, file, indent=2, sort_keys=True)
+            file.write('\n')
+        os.replace(temporary_path, report_path)
+        self.logger.info(f"Current metrics saved to {report_path}")
 
     def train_step(self,data_dict):
         if self.config['optimizer']['type']=='sam':
@@ -441,7 +478,6 @@ class Trainer(object):
         # define test recorder
         losses_all_datasets = {}
         metrics_all_datasets = {}
-        best_metrics_per_dataset = defaultdict(dict)  # best metric for each dataset, for each metric
         avg_metric = {'acc': 0, 'auc': 0, 'eer': 0, 'ap': 0,'video_auc': 0,'dataset_dict':{}}
         # testing for all test data
         keys = test_data_loaders.keys()
@@ -461,6 +497,7 @@ class Trainer(object):
                     for image_path, video_id in zip(data_dict['image'], data_dict.get('video_id', data_dict['image']))
                 ]
             metric_one_dataset=get_test_metrics(y_pred=predictions_nps,y_true=label_nps,img_names=metric_inputs)
+            metrics_all_datasets[key] = self._plain_metric_values(metric_one_dataset)
             for metric_name, value in metric_one_dataset.items():
                 if metric_name in avg_metric:
                     avg_metric[metric_name]+=value
@@ -474,15 +511,19 @@ class Trainer(object):
             if save_best:
                 self.save_best(epoch, iteration, step, losses_one_dataset_recorder, key, metric_one_dataset, phase)
 
-        if len(keys)>0 and self.config.get('save_avg',False):
+        if len(keys)>0:
             # calculate avg value
             for key in avg_metric:
                 if key != 'dataset_dict':
                     avg_metric[key] /= len(keys)
-            if save_best:
+            metrics_all_datasets['avg'] = self._plain_metric_values(avg_metric)
+            if save_best and self.config.get('save_avg',False):
                 self.save_best(epoch, iteration, step, None, 'avg', avg_metric, phase)
 
         self.logger.info(f'===> {phase.capitalize()} Done!')
+        if not save_best:
+            self.save_metric_report(phase, metrics_all_datasets)
+            return metrics_all_datasets
         return self.best_metrics_all_time  # return all types of mean metrics for determining the best ckpt
 
     @torch.no_grad()
