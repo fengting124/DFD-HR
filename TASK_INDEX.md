@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `exp/official-checkpoint-eval`
+Current task branch: `test/dataset-protocol-audit`
 
-Completed scope: T2.6 official checkpoint calibration and its standard notebooks
+Completed scope: T3.2 dataset protocol audit notebook
 
-Next task branch: `test/dataset-protocol-audit`
+Next task branch: `test/single-gpu-smoke`
 
 ## 3. 当前里程碑
 
@@ -468,7 +468,7 @@ checksums.sha256
 
 - [x] `00_environment_and_paths.ipynb`
 - [x] `01_checkpoint_strict_load.ipynb`
-- [ ] `02_dataset_protocol_audit.ipynb`
+- [x] `02_dataset_protocol_audit.ipynb`
 - [ ] `03_single_gpu_memory_smoke.ipynb`
 - [x] `04_official_weight_eval.ipynb`
 - [ ] `05_training_monitor.ipynb`
@@ -494,7 +494,19 @@ checksums.sha256
 - `04` 默认限制 8 个确定性样本；只有显式设置本地 `DFDHR_EVAL_MAX_SAMPLES=0` 才执行完整数据集，避免误启动长评估。
 - 提交：`c4fd678`。
 
-下一步：在 `test/dataset-protocol-audit` 完成 `02_dataset_protocol_audit.ipynb`；`03` 随 T4.1 完成，`05` 等待结构化训练指标流。
+后续进展：`02` 已完成；`03` 随 T4.1 完成，`05` 等待结构化训练指标流。
+
+`02_dataset_protocol_audit.ipynb` 完成证据（2026-07-20）：
+
+- 源 Notebook 为无输出、无执行计数、nbformat 4.5 有效文件，kernelspec 为 `dfd-hr`，不包含真实节点或内部绝对路径。
+- 在干净提交 `ca3ced1` 上使用真实 `dfd-hr` Kernel 执行通过：5 个代码单元全部完成，0 error；执行副本和结构化 audit JSON 仅保存在 `${DFDHR_RUNTIME_ROOT}/jupyter-validation/`。
+- FaceForensics++ c23 的 5 个标签均具有显式且非空的 train/val/test 元数据，各标签三组 video ID 两两互斥；有限检查 30 个 JSON 引用文件均存在。
+- 当前 Dataset loader 分别解析 train `17248`、validation `13432`、test `3360` 个协议采样帧；validation 与 test 的已选路径集合完全互斥，确认没有 test fallback。
+- 外部测试角色 `Celeb-DF-v2` 解析 `4139` 个协议采样帧，有限检查 8 个引用文件存在；JSON SHA-256 为 `754a72ede6a124602e2c1d8da1a8fa83fb539a71c837076fa4550d09eeca5672`。
+- FaceForensics++ JSON SHA-256 为 `0f05209e5d9dfbb86038887d7a1bb5a1977d1fa70312b921bacd7f43604b7c3f`；Notebook 未遍历数据目录树、未解码图像、未修改数据或启动训练。
+- 提交：`ca3ced1`。
+
+下一步：从更新后的 `main` 创建 `test/single-gpu-smoke`，完成 T4.1 和 `03_single_gpu_memory_smoke.ipynb`。
 
 ## P4：Smoke Test 与正式复现
 
