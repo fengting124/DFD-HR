@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import torch
 
@@ -13,6 +14,7 @@ if str(TRAINING_ROOT) not in sys.path:
 from detectors.dfd_hr_detector import (
     build_moe_adapter_kwargs,
     compute_routed_layer_indices,
+    get_clip_visual,
 )
 from detectors.utils.moe_adapter import MoEAdapter
 
@@ -47,6 +49,37 @@ class DetectorHelpersTests(unittest.TestCase):
 
         self.assertEqual(kwargs["top_k"], 2)
         self.assertTrue(kwargs["noise"])
+
+    def test_pretrained_clip_uses_explicit_offline_safetensors_source(self):
+        model = MagicMock()
+        model.named_parameters.return_value = []
+        with (
+            patch(
+                'detectors.dfd_hr_detector.AutoProcessor.from_pretrained',
+                return_value='processor',
+            ) as processor_loader,
+            patch(
+                'detectors.dfd_hr_detector.CLIPModel.from_pretrained',
+                return_value=model,
+            ) as model_loader,
+        ):
+            processor, loaded_model = get_clip_visual(
+                model_name='openai/clip-vit-large-patch14',
+                pretrained=True,
+                pretrained_path='/local/pinned-clip',
+                local_files_only=True,
+            )
+
+        self.assertEqual(processor, 'processor')
+        self.assertIs(loaded_model, model)
+        processor_loader.assert_called_once_with(
+            '/local/pinned-clip', local_files_only=True
+        )
+        model_loader.assert_called_once_with(
+            '/local/pinned-clip',
+            local_files_only=True,
+            use_safetensors=True,
+        )
 
     @unittest.skipUnless(torch.cuda.is_available(), 'CUDA is required for autocast coverage')
     def test_moe_adapter_supports_cuda_autocast_backward(self):
