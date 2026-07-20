@@ -58,6 +58,7 @@ class FormalTrainingConfigTests(unittest.TestCase):
             self.assertEqual(config['frame_num'], {'train': 8, 'val': 32, 'test': 32})
             self.assertEqual(config['train_batchSize'], 1)
             self.assertEqual(config['gradient_accumulation_steps'], 8)
+            self.assertEqual(config['ddp_timeout_minutes'], 180)
             self.assertEqual(config['nEpochs'], 20)
             self.assertEqual(config['workers'], 4)
             self.assertTrue(config['amp'])

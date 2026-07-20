@@ -92,6 +92,15 @@ def resolve_runtime_device(ddp, local_rank, cuda_enabled):
     return torch.device('cpu')
 
 
+def resolve_ddp_timeout(config):
+    timeout_minutes = config.get('ddp_timeout_minutes', 30)
+    if isinstance(timeout_minutes, bool) or not isinstance(timeout_minutes, int):
+        raise ValueError('ddp_timeout_minutes must be a positive integer')
+    if timeout_minutes <= 0:
+        raise ValueError('ddp_timeout_minutes must be a positive integer')
+    return timedelta(minutes=timeout_minutes)
+
+
 def build_epoch_range(config):
     return range(config['start_epoch'], config['nEpochs'])
 
@@ -360,7 +369,7 @@ def main():
     if config['ddp']:
         dist.init_process_group(
             backend='nccl' if config['cuda'] and torch.cuda.is_available() else 'gloo',
-            timeout=timedelta(minutes=30)
+            timeout=resolve_ddp_timeout(config),
         )
         logger.addFilter(RankFilter(0))
     rank = dist.get_rank() if config['ddp'] else 0

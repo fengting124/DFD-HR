@@ -341,6 +341,7 @@ def initialize_run(args):
             args.gpu_count * args.per_gpu_batch * args.gradient_accumulation_steps
         ),
         'workers_per_process': args.workers,
+        'ddp_timeout_minutes': config.get('ddp_timeout_minutes', 30),
         'optimizer': config['optimizer']['type'],
         'learning_rate': config['optimizer'][config['optimizer']['type']]['lr'],
         'seed': config['manualSeed'],

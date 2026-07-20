@@ -1,6 +1,7 @@
 import sys
 import tempfile
 import unittest
+from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -29,6 +30,21 @@ class TrainHelpersTests(unittest.TestCase):
         device = train.resolve_runtime_device(ddp=False, local_rank=0, cuda_enabled=False)
 
         self.assertEqual(device, torch.device("cpu"))
+
+    def test_ddp_timeout_defaults_to_thirty_minutes(self):
+        self.assertEqual(train.resolve_ddp_timeout({}), timedelta(minutes=30))
+
+    def test_ddp_timeout_accepts_full_validation_window(self):
+        self.assertEqual(
+            train.resolve_ddp_timeout({'ddp_timeout_minutes': 180}),
+            timedelta(minutes=180),
+        )
+
+    def test_ddp_timeout_rejects_invalid_values(self):
+        for value in (0, -1, 1.5, True, '180'):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, 'positive integer'):
+                    train.resolve_ddp_timeout({'ddp_timeout_minutes': value})
 
     def test_local_rank_uses_torchrun_environment(self):
         self.assertEqual(train.resolve_local_rank(None, {'LOCAL_RANK': '1'}), 1)
