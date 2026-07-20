@@ -91,10 +91,43 @@ class FormalTrainingConfigTests(unittest.TestCase):
             self.assertFalse(config['cudnn_benchmark'])
             self.assertTrue(config['cudnn_deterministic'])
             self.assertTrue(config['deterministic_algorithms'])
+            self.assertEqual(config['cublas_workspace_config'], ':4096:8')
             self.assertEqual(config['manualSeed'], 1024)
             self.assertEqual(config['initialization_mode'], 'pinned_clip_pretrained')
             self.assertTrue(config['backbone_local_files_only'])
             self.assertEqual(config['workers'], 2)
+
+    def test_builder_records_seeded_best_effort_fallback(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            detector = root / 'detector.yaml'
+            base = root / 'base.yaml'
+            json_folder = root / 'json'
+            clip_folder = root / 'clip'
+            json_folder.mkdir()
+            clip_folder.mkdir()
+            (clip_folder / 'model.safetensors').touch()
+            detector.write_text(
+                yaml.safe_dump({
+                    'optimizer': {'type': 'adam', 'adam': {'lr': 0.1}},
+                }),
+                encoding='utf-8',
+            )
+            base.write_text('{}\n', encoding='utf-8')
+
+            config = build_formal_config(
+                detector,
+                base,
+                json_folder,
+                clip_folder,
+                reproducibility_mode='seeded_best_effort',
+            )
+
+            self.assertEqual(config['reproducibility_mode'], 'seeded_best_effort')
+            self.assertFalse(config['cudnn_benchmark'])
+            self.assertTrue(config['cudnn_deterministic'])
+            self.assertFalse(config['deterministic_algorithms'])
+            self.assertEqual(config['cublas_workspace_config'], ':4096:8')
 
 
 if __name__ == '__main__':

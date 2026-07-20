@@ -20,6 +20,7 @@ def build_formal_config(
     dataset_json_folder,
     clip_model_path,
     workers=4,
+    reproducibility_mode='deterministic',
 ):
     with open(base_config_path, encoding='utf-8') as file:
         config = yaml.safe_load(file) or {}
@@ -31,6 +32,9 @@ def build_formal_config(
         raise ValueError('clip_model_path must contain model.safetensors.')
     if workers < 0:
         raise ValueError('workers cannot be negative.')
+    if reproducibility_mode not in {'deterministic', 'seeded_best_effort'}:
+        raise ValueError('Unsupported reproducibility mode.')
+    deterministic = reproducibility_mode == 'deterministic'
 
     config.update({
         'protocol_mode': 'paper_aligned',
@@ -62,10 +66,11 @@ def build_formal_config(
             'later_epochs': 2,
         },
         'run_final_test_after_training': False,
-        'reproducibility_mode': 'deterministic',
+        'reproducibility_mode': reproducibility_mode,
         'cudnn_benchmark': False,
         'cudnn_deterministic': True,
-        'deterministic_algorithms': True,
+        'deterministic_algorithms': deterministic,
+        'cublas_workspace_config': ':4096:8',
         'dry_run': False,
     })
     config['optimizer']['type'] = 'adam'
@@ -80,6 +85,11 @@ def parse_args():
     parser.add_argument('--dataset-json-folder', required=True)
     parser.add_argument('--clip-model-path', required=True)
     parser.add_argument('--workers', type=int, default=4)
+    parser.add_argument(
+        '--reproducibility-mode',
+        choices=('deterministic', 'seeded_best_effort'),
+        default='deterministic',
+    )
     parser.add_argument('--output', required=True)
     parser.add_argument('--repo-root', required=True)
     parser.add_argument('--data-root', required=True)
@@ -98,6 +108,7 @@ def main():
         args.dataset_json_folder,
         args.clip_model_path,
         workers=args.workers,
+        reproducibility_mode=args.reproducibility_mode,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(

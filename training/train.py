@@ -48,11 +48,40 @@ parser.add_argument("--resume", type=str)
 parser.add_argument('--no-save_ckpt', dest='save_ckpt', action='store_false', default=True)
 parser.add_argument('--no-save_feat', dest='save_feat', action='store_false', default=True)
 parser.add_argument("--ddp", action='store_true', default=False)
-parser.add_argument('--local_rank', '--local-rank', type=int, default=0)
+parser.add_argument('--local_rank', '--local-rank', type=int)
 
 
 def parse_args():
     return parser.parse_args()
+
+
+def resolve_local_rank(cli_local_rank, environment=None):
+    if cli_local_rank is not None:
+        local_rank = cli_local_rank
+    else:
+        environment = os.environ if environment is None else environment
+        try:
+            local_rank = int(environment.get('LOCAL_RANK', 0))
+        except (TypeError, ValueError) as error:
+            raise ValueError('LOCAL_RANK must be a non-negative integer') from error
+    if local_rank < 0:
+        raise ValueError('LOCAL_RANK must be a non-negative integer')
+    return local_rank
+
+
+def configure_cublas_workspace(config, environment=None):
+    mode = config.get('reproducibility_mode', 'seeded_best_effort')
+    if 'cublas_workspace_config' not in config and mode != 'deterministic':
+        return None
+    environment = os.environ if environment is None else environment
+    workspace_config = config.get('cublas_workspace_config', ':4096:8')
+    if workspace_config not in {':4096:8', ':16:8'}:
+        raise ValueError('cublas_workspace_config must be :4096:8 or :16:8')
+    existing = environment.get('CUBLAS_WORKSPACE_CONFIG')
+    if existing is not None and existing != workspace_config:
+        raise ValueError('CUBLAS_WORKSPACE_CONFIG conflicts with the deterministic config')
+    environment['CUBLAS_WORKSPACE_CONFIG'] = workspace_config
+    return workspace_config
 
 
 def resolve_runtime_device(ddp, local_rank, cuda_enabled):
@@ -295,9 +324,10 @@ def choose_metric(config):
 
 def main():
     args = parse_args()
+    local_rank = resolve_local_rank(args.local_rank)
     # parse options and load config
     config = load_training_config(args.detector_path)
-    config['local_rank']=args.local_rank
+    config['local_rank']=local_rank
     if config['dry_run']:
         config['nEpochs'] = 0
         config['save_feat']=False
@@ -310,7 +340,8 @@ def main():
         config['test_dataset'] = args.test_dataset
     config['save_ckpt'] = args.save_ckpt
     config['save_feat'] = args.save_feat
-    config['device'] = str(resolve_runtime_device(args.ddp, args.local_rank, config['cuda']))
+    configure_cublas_workspace(config)
+    config['device'] = str(resolve_runtime_device(args.ddp, local_rank, config['cuda']))
     if config['lmdb']:
         config['dataset_json_folder'] = 'preprocessing/dataset_json_v3'
     # create logger

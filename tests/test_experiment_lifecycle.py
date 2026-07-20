@@ -59,6 +59,9 @@ class ExperimentLifecycleTests(unittest.TestCase):
         self.assertFalse(manifest['protocol']['run_final_test_after_training'])
         self.assertEqual(manifest['reproducibility']['mode'], 'deterministic')
         self.assertTrue(manifest['reproducibility']['deterministic_algorithms'])
+        self.assertEqual(
+            manifest['reproducibility']['cublas_workspace_config'], ':4096:8'
+        )
 
     def test_config_freeze_merges_base_and_redirects_outputs(self):
         with tempfile.TemporaryDirectory() as temp_dir:

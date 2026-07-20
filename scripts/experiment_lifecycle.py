@@ -402,6 +402,9 @@ def initialize_run(args):
         'deterministic_algorithms': config.get(
             'deterministic_algorithms', reproducibility_mode == 'deterministic'
         ),
+        'cublas_workspace_config': config.get(
+            'cublas_workspace_config', ':4096:8'
+        ),
     })
     assert_resolved(manifest)
     atomic_write_text(
