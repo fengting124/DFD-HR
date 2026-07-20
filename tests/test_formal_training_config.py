@@ -15,7 +15,7 @@ from build_formal_training_config import build_formal_config
 
 
 class FormalTrainingConfigTests(unittest.TestCase):
-    def test_builder_freezes_two_gpu_paper_aligned_protocol(self):
+    def test_builder_freezes_two_gpu_paper_spec_protocol(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             detector = root / 'detector.yaml'
@@ -44,7 +44,14 @@ class FormalTrainingConfigTests(unittest.TestCase):
                 clip_folder,
             )
 
-            self.assertEqual(config['protocol_mode'], 'paper_aligned')
+            self.assertEqual(config['protocol_mode'], 'paper_spec')
+            self.assertEqual(
+                config['paper_spec_basis']['moe_routing'],
+                'paper_equations_13_14',
+            )
+            self.assertEqual(config['backbone_config']['moe']['num_experts'], 4)
+            self.assertEqual(config['backbone_config']['moe']['top_k'], 4)
+            self.assertTrue(config['backbone_config']['moe']['noise'])
             self.assertEqual(config['train_dataset'], ['FaceForensics++'])
             self.assertEqual(config['validation_dataset'], ['FaceForensics++'])
             self.assertEqual(config['test_dataset'], [])

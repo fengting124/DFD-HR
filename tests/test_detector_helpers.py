@@ -34,12 +34,12 @@ class DetectorHelpersTests(unittest.TestCase):
         self.assertEqual(kwargs["top_k"], 4)
         self.assertFalse(kwargs["noise"])
 
-    def test_build_moe_adapter_kwargs_reads_paper_aligned_overrides(self):
+    def test_build_moe_adapter_kwargs_reads_paper_spec_overrides(self):
         config = {
             "backbone_config": {
                 "moe": {
                     "num_experts": 4,
-                    "top_k": 2,
+                    "top_k": 4,
                     "noise": True,
                 }
             }
@@ -47,7 +47,7 @@ class DetectorHelpersTests(unittest.TestCase):
 
         kwargs = build_moe_adapter_kwargs(config)
 
-        self.assertEqual(kwargs["top_k"], 2)
+        self.assertEqual(kwargs["top_k"], 4)
         self.assertTrue(kwargs["noise"])
 
     def test_pretrained_clip_uses_explicit_offline_safetensors_source(self):

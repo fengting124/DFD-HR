@@ -37,7 +37,12 @@ def build_formal_config(
     deterministic = reproducibility_mode == 'deterministic'
 
     config.update({
-        'protocol_mode': 'paper_aligned',
+        'protocol_mode': 'paper_spec',
+        'paper_spec_basis': {
+            'moe_routing': 'paper_equations_13_14',
+            'epochs': 'official_repository_default',
+            'amp_and_batch_adaptation': 'hardware_adaptation_effective_batch_16',
+        },
         'dataset_json_folder': str(Path(dataset_json_folder).resolve()),
         'backbone_name': 'ViT-L/14_proj',
         'backbone_pretrained': True,
@@ -75,6 +80,13 @@ def build_formal_config(
     })
     config['optimizer']['type'] = 'adam'
     config['optimizer']['adam']['lr'] = 0.0001
+    moe_config = config.setdefault('backbone_config', {}).setdefault('moe', {})
+    moe_config.update({
+        'num_experts': 4,
+        'top_k': 4,
+        'noise': True,
+        'load_balancing_weight': 0.0,
+    })
     return config
 
 
