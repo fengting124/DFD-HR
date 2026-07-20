@@ -37,6 +37,7 @@ class AmpGradAccumTests(unittest.TestCase):
         accumulation_steps=1,
         optimizer_type="adam",
         device="cpu",
+        amp_initial_scale=None,
     ):
         trainer = Trainer.__new__(Trainer)
         trainer.config = {
@@ -46,6 +47,8 @@ class AmpGradAccumTests(unittest.TestCase):
             "ddp": False,
             "optimizer": {"type": optimizer_type},
         }
+        if amp_initial_scale is not None:
+            trainer.config["amp_initial_scale"] = amp_initial_scale
         trainer.logger = Mock()
         trainer.device = torch.device(device)
         trainer.model = TinyModel().to(trainer.device)
@@ -103,6 +106,26 @@ class AmpGradAccumTests(unittest.TestCase):
     def test_sam_rejects_unsupported_accumulation(self):
         with self.assertRaisesRegex(ValueError, "SAM"):
             self.make_trainer(accumulation_steps=2, optimizer_type="sam")
+
+    def test_amp_initial_scale_must_be_positive(self):
+        with self.assertRaisesRegex(ValueError, "amp_initial_scale"):
+            self.make_trainer(amp_initial_scale=0)
+
+    def test_gradient_observer_runs_after_unscale(self):
+        trainer = self.make_trainer()
+        trainer.optimizer.zero_grad(set_to_none=True)
+        observed = []
+        data = {"x": torch.tensor([[1.0]]), "y": torch.tensor([[0.0]])}
+
+        trainer.train_step(
+            data,
+            gradient_observer=lambda model: observed.append(
+                model.linear.weight.grad.detach().clone()
+            ),
+        )
+
+        self.assertEqual(len(observed), 1)
+        self.assertTrue(torch.isfinite(observed[0]).all())
 
     def test_detector_configs_declare_safe_defaults(self):
         for relative_path in (

@@ -175,8 +175,8 @@ class DFDHRDetector(AbstractDetector):
         # MoD full-layer drop (gumbel exit).
         batch_size = hidden_states.size(0)
         # active_mask == 1 means the sample is still "active" and keeps computing layers.
-        active_mask = torch.ones(batch_size, device=hidden_states.device)
-        loss_spearman = torch.zeros((), device=hidden_states.device)
+        active_mask = hidden_states.new_ones(batch_size)
+        loss_spearman = hidden_states.new_zeros(())
 
         for idx, encoder_layer in enumerate(self.backbone.encoder.layers[0:self.config['backbone_config']['layer']]):
             if output_hidden_states:
@@ -328,8 +328,8 @@ class DFDHRDetector(AbstractDetector):
 
         # Initialize the output (unselected tokens stay unchanged).
         output = hidden_states.clone()
-        selected_tokens = torch.zeros(b, k, d).to(hidden_states.device)
-        selected_weights = torch.zeros(b, k).to(hidden_states.device)
+        selected_tokens = hidden_states.new_zeros((b, k, d))
+        selected_weights = weights.new_zeros((b, k))
 
         # Handle each sample individually.
         for i in range(b):
