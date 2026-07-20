@@ -65,7 +65,13 @@ def build_epoch_range(config):
 
 
 def resolve_eval_loader_names(config):
-    return config.get('validation_dataset', [])
+    validation_dataset = config.get('validation_dataset')
+    if not validation_dataset:
+        raise ValueError(
+            'validation_dataset must explicitly name at least one dataset; '
+            'test_dataset cannot be used for checkpoint selection.'
+        )
+    return validation_dataset
 
 
 def init_seed(config):

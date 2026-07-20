@@ -303,10 +303,12 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
 
     @staticmethod
     def _resolve_mode_split(split_dict, mode, compression, dataset_name, cp):
-        mode_key = mode
-        if mode == 'val' and 'val' not in split_dict:
-            mode_key = 'test'
-        sub_dataset_info = split_dict[mode_key]
+        if mode not in split_dict:
+            raise ValueError(
+                f"Dataset {dataset_name!r} has no explicit {mode!r} split; "
+                "a test split cannot substitute for validation."
+            )
+        sub_dataset_info = split_dict[mode]
         if cp is None and dataset_name in ['FF-DF', 'FF-F2F', 'FF-FS', 'FF-NT', 'FaceForensics++', 'DeepFakeDetection', 'FaceShifter']:
             sub_dataset_info = sub_dataset_info[compression]
         elif cp == 'c40' and dataset_name in ['FF-DF', 'FF-F2F', 'FF-FS', 'FF-NT', 'FaceForensics++', 'DeepFakeDetection', 'FaceShifter']:
