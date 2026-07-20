@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `fix/ddp-validation-sync`
+Current task branch: `exp/official-checkpoint-eval`
 
-Completed scope: T2.5 DDP validation synchronization
+Completed scope: T2.6 official checkpoint calibration and its standard notebooks
 
-Next task branch: `exp/official-checkpoint-eval`
+Next task branch: `test/dataset-protocol-audit`
 
 ## 3. 当前里程碑
 
@@ -415,12 +415,26 @@ checksums.sha256
 
 ### T2.6 官方权重评估校准
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] 官方 checkpoint `strict=True` 加载。
-- [ ] 固定小子集评估。
-- [ ] 至少一个完整外部数据集评估。
-- [ ] 记录 checkpoint、配置、JSON 哈希和指标。
+- [x] 官方 checkpoint `strict=True` 加载。
+- [x] 固定小子集评估。
+- [x] 至少一个完整外部数据集评估。
+- [x] 记录 checkpoint、配置、JSON 哈希和指标。
+
+完成证据（2026-07-20）：
+
+- 官方 checkpoint 在强制 Hugging Face 离线模式下按 CLIP-L/14 公开架构构造并 `strict=True` 加载成功；1335 个 checkpoint 张量与 409,037,250 个模型参数完全匹配，无 missing/unexpected key。
+- 官方 checkpoint SHA-256 为 `bbf2b1c805fe545a1ac1ead36e3c4341a78b5a6334766dd875dc6d1a940944ec`；上游默认 detector 配置 SHA-256 为 `168c1abd68d8719a27537b92d3ae9de88dcc74a26226f018e7a4356e1fc995e`，测试配置 SHA-256 为 `e29340d58ae09c15422b3f72c0cd48df3a8aa697268e04cc72e12f04bc2c8656`。
+- 固定小子集校准使用外部数据集角色 `Celeb-DF-v2`，8 帧、2 视频，batch 1；帧级 AUC `1.0`，视频级 AUC `1.0`。该结果只证明链路可复现，不作为研究指标。
+- 完整外部数据集校准使用 `e4s_ff` 的全部测试协议样本：2040 帧、255 视频，batch 1；帧级 AUC `0.9728590838509317`、ACC `0.8759803921568627`、AP `0.9719757913021212`、EER `0.07142857142857142`，视频级 AUC `0.986583850931677`、ACC `0.9176470588235294`、EER `0.05`。
+- 完整评估关联代码提交 `166528b`；`e4s_ff` JSON SHA-256 为 `a2aa669d2403554eb41e2ba5e067ad50dc387a6b086f8a308cdd1ffda5f4fa61`。结构化报告和日志保存在 Git 外运行目录，不含逐样本预测或标签数组。
+- 新增离线架构构造、checkpoint 键归一化冲突检查、确定性类别均衡子集、哈希和原子 JSON 报告工具；完整测试为 31 tests OK。
+- 本任务只执行只读 checkpoint 加载和推理；未下载 backbone、未复制资产、未修改数据/环境/系统配置，未启动训练。
+
+提交：`166528b`（离线严格加载与评估工具）、`c4fd678`（`01`/`04` 标准 Notebook）。
+
+下一步：先完成 `02_dataset_protocol_audit.ipynb`，把已修复的 validation/test 协议和 JSON 有效性固化为可重复审计；随后进入 T4.1 单卡两批次 Smoke Test。
 
 ## P3：Jupyter 标准化
 
@@ -453,10 +467,10 @@ checksums.sha256
 **状态：TODO**
 
 - [x] `00_environment_and_paths.ipynb`
-- [ ] `01_checkpoint_strict_load.ipynb`
+- [x] `01_checkpoint_strict_load.ipynb`
 - [ ] `02_dataset_protocol_audit.ipynb`
 - [ ] `03_single_gpu_memory_smoke.ipynb`
-- [ ] `04_official_weight_eval.ipynb`
+- [x] `04_official_weight_eval.ipynb`
 - [ ] `05_training_monitor.ipynb`
 
 源 Notebook 进入 Git；执行后的副本和大型输出进入 `${DFDHR_RUNTIME_ROOT}`。Notebook 必须 Restart Kernel 后 Run All 成功。
@@ -470,19 +484,29 @@ checksums.sha256
 - 未加载模型，未遍历或修改数据，未启动训练；源 Notebook 不含真实节点信息或内部绝对路径。
 - 提交：`df9736a`。
 
-下一步：其余 5 个 Notebook 保持 TODO，并随各自依赖任务处理；本分支完成后优先进入 `fix/validation-protocol`，不继续扩展 Notebook。
+后续进展：`01` 和 `04` 已随 T2.6 完成；`02`、`03`、`05` 继续按各自依赖任务处理。
+
+`01_checkpoint_strict_load.ipynb` 与 `04_official_weight_eval.ipynb` 完成证据（2026-07-20）：
+
+- 两个源 Notebook 均为无输出、无执行计数、nbformat 4.5 有效文件，kernelspec 为 `dfd-hr`，不包含真实节点或内部绝对路径。
+- 在代码提交 `c4fd678` 上使用真实 `dfd-hr` Kernel 执行通过：`01` 的 3 个代码单元确认 1335 个张量 strict load；`04` 的 3 个代码单元完成 8 样本外部集校准并读取结构化报告，均为 0 error。
+- 执行副本和 `04` 生成的指标报告仅保存在 `${DFDHR_RUNTIME_ROOT}/jupyter-validation/`，未提交到 Git。
+- `04` 默认限制 8 个确定性样本；只有显式设置本地 `DFDHR_EVAL_MAX_SAMPLES=0` 才执行完整数据集，避免误启动长评估。
+- 提交：`c4fd678`。
+
+下一步：在 `test/dataset-protocol-audit` 完成 `02_dataset_protocol_audit.ipynb`；`03` 随 T4.1 完成，`05` 等待结构化训练指标流。
 
 ## P4：Smoke Test 与正式复现
 
 ### T4.1 单卡两批次 Smoke Test
 
-**状态：BLOCKED by P0/P2**
+**状态：TODO**
 
 从 micro-batch 1 开始，分别记录 FP32 和 AMP 峰值显存、step time、有限 loss、可训练模块梯度、冻结 backbone 无梯度、checkpoint round trip。
 
 ### T4.2 两卡 DDP Smoke Test
 
-**状态：BLOCKED by T4.1/T2.5**
+**状态：BLOCKED by T4.1**
 
 有限步数验证同步、日志、有效 batch、checkpoint、正常退出和恢复。
 
