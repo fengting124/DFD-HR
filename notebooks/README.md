@@ -64,3 +64,13 @@ export DFDHR_EVAL_MAX_SAMPLES=0
 ```
 
 The value `0` means no sample cap. These variables and executed notebooks are local run metadata and must not be committed.
+
+## Dataset protocol audit
+
+`02_dataset_protocol_audit.ipynb` verifies explicit FaceForensics++ c23 train/validation/test metadata, split disjointness, current loader behavior, JSON hashes, and a bounded set of referenced files. It defaults to `Celeb-DF-v2` for the external test-role check. Override that role without editing the source notebook:
+
+```bash
+export DFDHR_AUDIT_EXTERNAL_DATASET=DFDC
+```
+
+The audit parses registry JSON but never walks the dataset directory tree or decodes images.
