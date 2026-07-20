@@ -43,7 +43,9 @@ git log --oneline --decorate -12
 
 Current task branch: `infra/jupyter-standard`
 
-Current task: T3.1 is blocked; the minimal part of T3.2 remains TODO
+Completed scope: T3.1 and `00_environment_and_paths.ipynb`
+
+Next task branch: `fix/validation-protocol`
 
 ## 3. 当前里程碑
 
@@ -249,6 +251,8 @@ DFD-HR 就绪性：
 - [ ] 训练输出不写入代码目录或共享数据目录。
 - [ ] 缓存不写入仓库。
 
+已知前置问题：`00_environment_and_paths.ipynb` 的只读审计确认当前 detector YAML 使用仓库相对 `log_dir`/`logdir`，按仓库根解析时会把日志和 checkpoint 写入仓库。正式运行前必须由运行配置显式覆盖到 `${DFDHR_RUNTIME_ROOT}`；本次 Jupyter 任务未修改训练配置。
+
 ### T1.2 实验注册表
 
 **状态：TODO**
@@ -349,32 +353,33 @@ checksums.sha256
 
 ### T3.1 注册现有环境为 Kernel
 
-**状态：BLOCKED**
+**状态：DONE**
 
-- [ ] 确认 `ipykernel`。
-- [ ] 注册稳定显示名。
-- [ ] Kernel 必须指向现有 DFD-HR Conda Python。
-- [ ] Jupyter runtime/config 放入当前用户运行目录。
-- [ ] Server 仅监听 localhost，经 SSH 隧道访问。
+- [x] 确认 `ipykernel`。
+- [x] 注册稳定显示名。
+- [x] Kernel 必须指向现有 DFD-HR Conda Python。
+- [x] Jupyter runtime/config 放入当前用户运行目录。
+- [x] Server 仅监听 localhost，经 SSH 隧道访问。
 
-阻塞证据（2026-07-20）：
+完成证据（2026-07-20）：
 
-- 既有 `${DFDHR_PYTHON}` 可执行，PyTorch `2.3.1+cu121`、CUDA runtime `12.1`、CUDA available，GPU count `2`。
-- `${DFDHR_PYTHON} -m ipykernel --version` 返回 `No module named ipykernel`。
-- `${DFDHR_PYTHON} -m jupyter --version` 和 kernelspec 查询均返回 `No module named jupyter`。
-- 按当前任务边界未安装软件，未使用系统 Python 替代，未注册 Kernel，未启动 Jupyter。
+- 经用户明确批准，在既有 DFD-HR 环境中安装 ipykernel `6.31.0`、JupyterLab `4.6.1` 和 nbconvert `7.17.1`；未使用或修改系统 Python。
+- 用户级 `dfd-hr` kernelspec 注册成功，显示名为 `Python (DFD-HR)`，`kernel.json` 的 `argv[0]` 与 `${DFDHR_PYTHON}` 完全一致。
+- 真实 Kernel 启动和执行通过：解释器匹配，PyTorch `2.3.1+cu121`，CUDA available。
+- `scripts/register_jupyter_kernel.sh` 连续执行两次成功，注册结果一致。
+- `scripts/start_jupyter_local.sh` 实际启动验证仅监听 `127.0.0.1`；runtime/config 位于 `${DFDHR_RUNTIME_ROOT}/jupyter/` 且权限为 `700`，验证后 Server 已停止。
+- 未修改 CUDA、系统配置、训练代码、数据或权重，未启动训练。
+- 最终验证：`pip check` 无依赖破损；`${DFDHR_PYTHON} -m unittest discover -s tests -v` 为 9 tests OK；Shell 语法和源 Notebook nbformat/空输出检查通过。
 
-提交：`b309729`（Jupyter 能力检查与阻塞状态）。
+提交：`eab2030`（Kernel 注册、localhost 启动脚本和使用说明）。
 
-验证：`${DFDHR_PYTHON} -m unittest discover -s tests -v`，9 tests OK；`git diff --check origin/main...HEAD` 通过。
-
-下一步：取得明确安装批准后，在既有 DFD-HR 环境中补齐 Jupyter/ipykernel，再重新执行 T3.1 全部验收；批准前不创建无法执行验证的 Notebook。
+下一步：Kernel 基础设施已完成；后续节点需使用同一脚本在各自现有环境中注册，不提交节点本地 kernelspec。
 
 ### T3.2 标准 Notebook
 
 **状态：TODO**
 
-- [ ] `00_environment_and_paths.ipynb`
+- [x] `00_environment_and_paths.ipynb`
 - [ ] `01_checkpoint_strict_load.ipynb`
 - [ ] `02_dataset_protocol_audit.ipynb`
 - [ ] `03_single_gpu_memory_smoke.ipynb`
@@ -383,7 +388,16 @@ checksums.sha256
 
 源 Notebook 进入 Git；执行后的副本和大型输出进入 `${DFDHR_RUNTIME_ROOT}`。Notebook 必须 Restart Kernel 后 Run All 成功。
 
-当前依赖：`00_environment_and_paths.ipynb` 的创建和执行验证等待 T3.1 提供可用的 `dfd-hr` Kernel；其余 Notebook 继续保持 TODO，并按各自正确性任务处理。
+`00_environment_and_paths.ipynb` 完成证据（2026-07-20）：
+
+- 源文件：`notebooks/00_environment_and_paths.ipynb`，提交前已清空输出，nbformat 校验通过，kernelspec 为 `dfd-hr`。
+- 执行副本：`${DFDHR_RUNTIME_ROOT}/jupyter-validation/20260720_172902/00_environment_and_paths.executed.ipynb`，位于 Git 外。
+- Restart/Run All 等价执行通过：7 个代码单元全部执行，无错误，解释器匹配，CUDA available，runtime 不在仓库或数据根内。
+- 只读配置审计发现当前 detector YAML 的相对日志目录会解析到仓库内；已记录到 T1.1，未在本任务修改训练配置。
+- 未加载模型，未遍历或修改数据，未启动训练；源 Notebook 不含真实节点信息或内部绝对路径。
+- 提交：`df9736a`。
+
+下一步：其余 5 个 Notebook 保持 TODO，并随各自依赖任务处理；本分支完成后优先进入 `fix/validation-protocol`，不继续扩展 Notebook。
 
 ## P4：Smoke Test 与正式复现
 
