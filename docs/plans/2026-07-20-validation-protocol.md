@@ -27,7 +27,7 @@
 - Modify: `tests/test_train_helpers.py`
 - Modify: `tests/test_dataset_sampling.py`
 
-- [ ] **Step 1: Add missing-validation configuration coverage**
+- [x] **Step 1: Add missing-validation configuration coverage**
 
 Add this test to `TrainHelpersTests`:
 
@@ -37,7 +37,7 @@ def test_resolve_eval_loader_names_rejects_missing_validation_dataset(self):
         train.resolve_eval_loader_names({"validation_dataset": []})
 ```
 
-- [ ] **Step 2: Replace the split-fallback test with strict split coverage**
+- [x] **Step 2: Replace the split-fallback test with strict split coverage**
 
 Replace `test_validation_mode_falls_back_to_test_split` with:
 
@@ -90,7 +90,7 @@ def test_validation_mode_uses_explicit_validation_split(self):
     self.assertIn("vid0", resolved)
 ```
 
-- [ ] **Step 3: Run the focused tests and verify the new assertions fail**
+- [x] **Step 3: Run the focused tests and verify the new assertions fail**
 
 Run:
 
@@ -104,7 +104,7 @@ Run:
 
 Expected: the two rejection tests fail because empty validation configuration and test-split fallback are still accepted; the explicit validation test passes.
 
-- [ ] **Step 4: Commit the regression tests**
+- [x] **Step 4: Commit the regression tests**
 
 ```bash
 git add tests/test_train_helpers.py tests/test_dataset_sampling.py
@@ -120,7 +120,7 @@ git commit -m "test(data): require explicit validation inputs"
 - Test: `tests/test_train_helpers.py`
 - Test: `tests/test_dataset_sampling.py`
 
-- [ ] **Step 1: Reject an empty validation dataset list**
+- [x] **Step 1: Reject an empty validation dataset list**
 
 Replace `resolve_eval_loader_names` with:
 
@@ -135,7 +135,7 @@ def resolve_eval_loader_names(config):
     return validation_dataset
 ```
 
-- [ ] **Step 2: Reject a missing requested split**
+- [x] **Step 2: Reject a missing requested split**
 
 Replace the fallback at the start of `_resolve_mode_split` with:
 
@@ -150,7 +150,7 @@ sub_dataset_info = split_dict[mode]
 
 Keep the existing compression selection unchanged.
 
-- [ ] **Step 3: Run focused tests and verify they pass**
+- [x] **Step 3: Run focused tests and verify they pass**
 
 Run:
 
@@ -163,7 +163,7 @@ Run:
 
 Expected: all tests in both modules pass.
 
-- [ ] **Step 4: Commit the minimal implementation**
+- [x] **Step 4: Commit the minimal implementation**
 
 ```bash
 git add training/train.py training/dataset/abstract_dataset.py
@@ -180,7 +180,7 @@ git commit -m "fix(data): reject implicit validation fallback"
 - Modify: `README.md`
 - Test: `tests/test_train_helpers.py`
 
-- [ ] **Step 1: Add a validation dataset CLI override**
+- [x] **Step 1: Add a validation dataset CLI override**
 
 Add beside the existing dataset arguments:
 
@@ -195,7 +195,7 @@ if args.validation_dataset:
     config['validation_dataset'] = args.validation_dataset
 ```
 
-- [ ] **Step 2: Declare validation in both detector configurations**
+- [x] **Step 2: Declare validation in both detector configurations**
 
 Set:
 
@@ -211,7 +211,7 @@ frame_num: {'train': 8, 'val': 32, 'test': 8}
 
 Keep the paper-aligned configuration's existing validation frame count unchanged.
 
-- [ ] **Step 3: Update both README training commands**
+- [x] **Step 3: Update both README training commands**
 
 Add this line between `--train_dataset` and `--test_dataset`:
 
@@ -219,7 +219,7 @@ Add this line between `--train_dataset` and `--test_dataset`:
     --validation_dataset FaceForensics++ \
 ```
 
-- [ ] **Step 4: Verify both YAML files parse and expose validation settings**
+- [x] **Step 4: Verify both YAML files parse and expose validation settings**
 
 Run:
 
@@ -241,7 +241,7 @@ PY
 
 Expected: both paths print with `['FaceForensics++']`; the default and paper-aligned validation frame counts print as `32`.
 
-- [ ] **Step 5: Commit configuration and documentation changes**
+- [x] **Step 5: Commit configuration and documentation changes**
 
 ```bash
 git add \
@@ -263,7 +263,7 @@ git commit -m "docs(train): declare validation dataset"
 - Verify: `tests/`
 - Verify: `README.md`
 
-- [ ] **Step 1: Run the complete CPU test suite**
+- [x] **Step 1: Run the complete CPU test suite**
 
 Run:
 
@@ -273,7 +273,7 @@ Run:
 
 Expected: all discovered tests pass.
 
-- [ ] **Step 2: Check syntax and whitespace**
+- [x] **Step 2: Check syntax and whitespace**
 
 Run:
 
@@ -286,7 +286,7 @@ git diff --check origin/main...HEAD
 
 Expected: both commands exit with status zero.
 
-- [ ] **Step 3: Confirm test data is never used as an implicit validation source**
+- [x] **Step 3: Confirm test data is never used as an implicit validation source**
 
 Run:
 
@@ -297,7 +297,7 @@ rg -n "mode_key = 'test'|falls_back_to_test|validation_dataset: \[\]" \
 
 Expected: no matches.
 
-- [ ] **Step 4: Review the final branch diff**
+- [x] **Step 4: Review the final branch diff**
 
 Run:
 
