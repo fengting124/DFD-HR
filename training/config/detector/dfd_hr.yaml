@@ -61,6 +61,8 @@ optimizer:
     weight_decay: 0.0005  # weight decay for regularization
 
 # training config
+amp: false
+gradient_accumulation_steps: 1
 lr_scheduler: null   # learning rate scheduler
 nEpochs: 20   # number of epochs to train for
 start_epoch: 0   # manual epoch number (useful for restarts)

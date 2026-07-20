@@ -15,6 +15,7 @@ import pickle
 import datetime
 import logging
 import numpy as np
+from contextlib import nullcontext
 from copy import deepcopy
 from collections import defaultdict
 from tqdm import tqdm
@@ -65,6 +66,7 @@ class Trainer(object):
             if self.metric_scoring != 'eer' else float('inf'))
         )
         self.speed_up()  # move model to GPU
+        self._configure_optimization_runtime()
 
         # get current time
         self.timenow = time_now
@@ -81,6 +83,59 @@ class Trainer(object):
                 self.config['model_name'] + task_str + '_' + self.timenow
             )
         os.makedirs(self.log_dir, exist_ok=True)
+
+    def _configure_optimization_runtime(self):
+        accumulation_steps = self.config.get('gradient_accumulation_steps', 1)
+        if isinstance(accumulation_steps, bool) or not isinstance(accumulation_steps, int) or accumulation_steps < 1:
+            raise ValueError('gradient_accumulation_steps must be a positive integer')
+
+        amp_requested = bool(self.config.get('amp', False))
+        optimizer_type = self.config.get('optimizer', {}).get('type')
+        if optimizer_type == 'sam' and (amp_requested or accumulation_steps != 1):
+            raise ValueError('SAM does not support AMP or gradient accumulation')
+
+        self.gradient_accumulation_steps = accumulation_steps
+        self.amp_enabled = amp_requested and self.device.type == 'cuda'
+        self.scaler = torch.cuda.amp.GradScaler(enabled=self.amp_enabled)
+        world_size = (
+            dist.get_world_size()
+            if self.config.get('ddp', False) and dist.is_available() and dist.is_initialized()
+            else 1
+        )
+        micro_batch_size = int(self.config['train_batchSize'])
+        effective_batch_size = micro_batch_size * world_size * accumulation_steps
+        self.config.update({
+            'amp_enabled': self.amp_enabled,
+            'world_size': world_size,
+            'gradient_accumulation_steps': accumulation_steps,
+            'effective_batch_size': effective_batch_size,
+        })
+        self.logger.info(
+            'Batch semantics: micro_batch=%s world_size=%s accumulation_steps=%s '
+            'effective_batch=%s amp_requested=%s amp_enabled=%s',
+            micro_batch_size,
+            world_size,
+            accumulation_steps,
+            effective_batch_size,
+            amp_requested,
+            self.amp_enabled,
+        )
+
+    @staticmethod
+    def _accumulation_window_size(iteration, total_batches, steps):
+        window_start = (iteration // steps) * steps
+        return min(steps, total_batches - window_start)
+
+    def _ensure_finite_gradients(self):
+        for parameter in self.model.parameters():
+            if parameter.grad is not None and not torch.isfinite(parameter.grad).all():
+                if self.amp_enabled:
+                    self.logger.warning(
+                        'Non-finite gradient detected; GradScaler will skip the optimizer step'
+                    )
+                    return False
+                raise FloatingPointError('Non-finite gradient detected')
+        return True
 
     def get_writer(self, phase, dataset_key, metric_key):
         writer_key = f"{phase}-{dataset_key}-{metric_key}"
@@ -239,33 +294,43 @@ class Trainer(object):
         os.replace(temporary_path, report_path)
         self.logger.info(f"Current metrics saved to {report_path}")
 
-    def train_step(self,data_dict):
+    def train_step(self, data_dict, should_step=True, accumulation_divisor=1):
         if self.config['optimizer']['type']=='sam':
+            if not should_step or accumulation_divisor != 1:
+                raise ValueError('SAM does not support gradient accumulation')
             for i in range(2):
                 predictions = self.model(data_dict)
                 losses = self.model.get_losses(data_dict, predictions)
+                if not torch.isfinite(losses['overall']).all():
+                    raise FloatingPointError('Non-finite loss detected')
                 if i == 0:
                     pred_first = predictions
                     losses_first = losses
                 self.optimizer.zero_grad()
                 losses['overall'].backward()
+                self._ensure_finite_gradients()
                 if i == 0:
                     self.optimizer.first_step(zero_grad=True)
                 else:
                     self.optimizer.second_step(zero_grad=True)
             return losses_first, pred_first
         else:
-
-            predictions = self.model(data_dict)
-            if type(self.model) is DDP:
-                losses = self.model.module.get_losses(data_dict, predictions)
-            else:
-                losses = self.model.get_losses(data_dict, predictions)
-            self.optimizer.zero_grad()
-            losses['overall'].backward()
-            self.optimizer.step()
-
-
+            with torch.cuda.amp.autocast(enabled=self.amp_enabled):
+                predictions = self.model(data_dict)
+                if type(self.model) is DDP:
+                    losses = self.model.module.get_losses(data_dict, predictions)
+                else:
+                    losses = self.model.get_losses(data_dict, predictions)
+            if not torch.isfinite(losses['overall']).all():
+                raise FloatingPointError('Non-finite loss detected')
+            scaled_loss = losses['overall'] / accumulation_divisor
+            self.scaler.scale(scaled_loss).backward()
+            if should_step:
+                self.scaler.unscale_(self.optimizer)
+                self._ensure_finite_gradients()
+                self.scaler.step(self.optimizer)
+                self.scaler.update()
+                self.optimizer.zero_grad(set_to_none=True)
             return losses,predictions
 
     def move_data_dict_to_device(self, data_dict):
@@ -301,11 +366,32 @@ class Trainer(object):
         train_recorder_loss = defaultdict(Recorder)
         train_recorder_metric = defaultdict(Recorder)
 
-        for iteration, data_dict in tqdm(enumerate(train_data_loader),total=len(train_data_loader)):
+        self.optimizer.zero_grad(set_to_none=True)
+        total_batches = len(train_data_loader)
+        for iteration, data_dict in tqdm(enumerate(train_data_loader),total=total_batches):
             self.setTrain()
             data_dict = self.move_data_dict_to_device(data_dict)
 
-            losses,predictions=self.train_step(data_dict)
+            should_step = (
+                (iteration + 1) % self.gradient_accumulation_steps == 0
+                or iteration + 1 == total_batches
+            )
+            accumulation_divisor = self._accumulation_window_size(
+                iteration,
+                total_batches=total_batches,
+                steps=self.gradient_accumulation_steps,
+            )
+            sync_context = (
+                self.model.no_sync()
+                if isinstance(self.model, DDP) and not should_step
+                else nullcontext()
+            )
+            with sync_context:
+                losses,predictions = self.train_step(
+                    data_dict,
+                    should_step=should_step,
+                    accumulation_divisor=accumulation_divisor,
+                )
 
             # update learning rate
 

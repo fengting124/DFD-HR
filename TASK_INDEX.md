@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `fix/final-test-metrics`
+Current task branch: `feat/amp-grad-accum`
 
-Completed scope: T2.2 final test metrics
+Completed scope: T2.3 AMP and gradient accumulation
 
-Next task branch: `feat/amp-grad-accum`
+Next task branch: `feat/checkpoint-resume`
 
 ## 3. 当前里程碑
 
@@ -344,12 +344,28 @@ checksums.sha256
 
 ### T2.3 AMP 与梯度累积
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] 配置驱动 AMP。
-- [ ] 梯度累积。
-- [ ] 记录每卡 micro-batch、world size、累积步数、有效 batch。
-- [ ] 检查有限 loss 和梯度。
+- [x] 配置驱动 AMP。
+- [x] 梯度累积。
+- [x] 记录每卡 micro-batch、world size、累积步数、有效 batch。
+- [x] 检查有限 loss 和梯度。
+
+完成证据（2026-07-20）：
+
+- 两个 detector YAML 显式声明保守默认值 `amp: false` 和 `gradient_accumulation_steps: 1`；AMP 仅在配置开启且运行设备为 CUDA 时生效。
+- 非 SAM 优化器按累积窗口归一化 loss，只在窗口边界执行 optimizer step；最后一个不足窗口使用实际 micro-batch 数作为除数。
+- DDP 非边界 micro-batch 使用 `no_sync`；完整 DDP 同步正确性仍由 T2.5 和两进程 Smoke 单独验证。
+- 运行配置和日志记录每卡 micro-batch、world size、累积步数、有效 batch、AMP 请求值和实际启用值。
+- FP32/非 AMP 路径发现非有限 loss 或梯度立即失败；AMP 梯度溢出记录警告并交由 GradScaler 跳过 step、降低 scale。
+- SAM 与 AMP 或累积步数大于 1 的组合明确拒绝，避免不正确的两阶段梯度累积。
+- 回归测试覆盖 optimizer step 边界、末尾残余窗口、CPU AMP 禁用、配置默认值、非有限 loss/梯度、SAM 边界和真实 CUDA GradScaler 溢出恢复。
+- 完整测试为 21 tests OK；真实 CUDA 验证仅使用 1 x 1 合成张量，未加载项目模型或数据，未启动实验训练。
+- Python 编译、`git diff --check` 和敏感信息扫描通过。
+
+提交：`cb64a62`（失败合同测试）、`ffbf9f3`（AMP 与累积实现）、`fe980fb`（配置默认值）、`822d292`（GradScaler 溢出恢复）。
+
+下一步：合并本分支后从更新的 `main` 创建 `feat/checkpoint-resume`，完成 T2.4，包括 GradScaler 和 RNG 的完整恢复与 round-trip 测试。
 
 ### T2.4 可恢复 checkpoint
 
