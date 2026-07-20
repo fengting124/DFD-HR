@@ -77,6 +77,13 @@ def resolve_eval_loader_names(config):
     return validation_dataset
 
 
+def should_run_final_test(config):
+    enabled = config.get('run_final_test_after_training', True)
+    if not isinstance(enabled, bool):
+        raise ValueError('run_final_test_after_training must be a boolean')
+    return enabled and bool(config.get('test_dataset'))
+
+
 def load_training_config(detector_path, base_config_path='./training/config/train_config.yaml'):
     with open(base_config_path, encoding='utf-8') as file:
         config = yaml.safe_load(file) or {}
@@ -97,13 +104,58 @@ def apply_fixed_subset(dataset, max_samples, role):
     return selected
 
 
-def init_seed(config):
-    if config['manualSeed'] is None:
-        config['manualSeed'] = random.randint(1, 10000)
-    random.seed(config['manualSeed'])
-    if config['cuda']:
-        torch.manual_seed(config['manualSeed'])
-        torch.cuda.manual_seed_all(config['manualSeed'])
+def configure_reproducibility(config, rank=0):
+    mode = config.get('reproducibility_mode', 'seeded_best_effort')
+    if mode not in {'deterministic', 'seeded_best_effort'}:
+        raise ValueError('reproducibility_mode must be deterministic or seeded_best_effort')
+    if config.get('manualSeed') is None:
+        config['manualSeed'] = random.SystemRandom().randint(1, 10000)
+
+    seed = int(config['manualSeed']) + int(rank)
+    config['runtime_seed'] = seed
+    random.seed(seed)
+    np.random.seed(seed % (2**32))
+    torch.manual_seed(seed)
+    if config.get('cuda') and torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+    deterministic = mode == 'deterministic'
+    benchmark = config.get(
+        'cudnn_benchmark',
+        bool(config.get('cudnn', False)) and not deterministic,
+    )
+    cudnn_deterministic = config.get('cudnn_deterministic', deterministic)
+    if not isinstance(benchmark, bool) or not isinstance(cudnn_deterministic, bool):
+        raise ValueError('cudnn_benchmark and cudnn_deterministic must be booleans')
+    if deterministic and (benchmark or not cudnn_deterministic):
+        raise ValueError(
+            'deterministic mode requires cudnn_benchmark=false and cudnn_deterministic=true'
+        )
+    cudnn.benchmark = benchmark
+    cudnn.deterministic = cudnn_deterministic
+    deterministic_algorithms = config.get('deterministic_algorithms', deterministic)
+    if not isinstance(deterministic_algorithms, bool):
+        raise ValueError('deterministic_algorithms must be a boolean')
+    if deterministic and not deterministic_algorithms:
+        raise ValueError('deterministic mode requires deterministic_algorithms=true')
+    torch.use_deterministic_algorithms(deterministic_algorithms)
+    return seed
+
+
+def seed_data_loader_worker(worker_id):
+    del worker_id
+    worker_seed = torch.initial_seed() % (2**32)
+    random.seed(worker_seed)
+    np.random.seed(worker_seed)
+
+
+def build_data_loader_generator(config, role):
+    role_offsets = {'train': 0, 'val': 10_000, 'test': 20_000}
+    if role not in role_offsets:
+        raise ValueError(f'Unsupported data loader role: {role}')
+    generator = torch.Generator()
+    generator.manual_seed(int(config['runtime_seed']) + role_offsets[role])
+    return generator
 
 
 def prepare_training_data(config):
@@ -115,14 +167,16 @@ def prepare_training_data(config):
     apply_fixed_subset(train_set, config.get('train_max_samples'), 'train')
 
     if config['ddp']:
-        sampler = DistributedSampler(train_set)
+        sampler = DistributedSampler(train_set, seed=int(config['manualSeed']))
         train_data_loader = \
             torch.utils.data.DataLoader(
                 dataset=train_set,
                 batch_size=config['train_batchSize'],
                 num_workers=int(config['workers']),
                 collate_fn=train_set.collate_fn,
-                sampler=sampler
+                sampler=sampler,
+                worker_init_fn=seed_data_loader_worker,
+                generator=build_data_loader_generator(config, 'train'),
             )
     else:
         train_data_loader = \
@@ -132,6 +186,8 @@ def prepare_training_data(config):
                 shuffle=True,
                 num_workers=int(config['workers']),
                 collate_fn=train_set.collate_fn,
+                worker_init_fn=seed_data_loader_worker,
+                generator=build_data_loader_generator(config, 'train'),
                 )
     return train_data_loader
 
@@ -159,6 +215,8 @@ def prepare_eval_data(config, mode, dataset_names):
                 num_workers=int(config['workers']),
                 collate_fn=test_set.collate_fn,
                 drop_last=(dataset_name == 'DeepFakeDetection'),
+                worker_init_fn=seed_data_loader_worker,
+                generator=build_data_loader_generator(config, mode),
             )
 
         return test_data_loader
@@ -256,11 +314,11 @@ def main():
     if config['lmdb']:
         config['dataset_json_folder'] = 'preprocessing/dataset_json_v3'
     # create logger
+    config['ddp']= args.ddp
     logger_path = config['log_dir']
     os.makedirs(logger_path, exist_ok=True)
     logger = create_logger(os.path.join(logger_path, 'training.log'))
     logger.info('Save log to {}'.format(logger_path))
-    config['ddp']= args.ddp
     # print configuration
     logger.info("--------------- Configuration ---------------")
     params_string = "Parameters: \n"
@@ -268,25 +326,25 @@ def main():
         params_string += "{}: {}".format(key, value) + "\n"
     logger.info(params_string)
 
-    # init seed
-    init_seed(config)
-
-    # set cudnn benchmark if needed
-    if config['cudnn']:
-        cudnn.benchmark = True
     if config['ddp']:
         dist.init_process_group(
             backend='nccl' if config['cuda'] and torch.cuda.is_available() else 'gloo',
             timeout=timedelta(minutes=30)
         )
         logger.addFilter(RankFilter(0))
+    rank = dist.get_rank() if config['ddp'] else 0
+    configure_reproducibility(config, rank=rank)
     # prepare the training data loader
     train_data_loader = prepare_training_data(config)
 
     # prepare the validation and testing data loaders
     validation_dataset_names = resolve_eval_loader_names(config)
     validation_data_loaders = prepare_eval_data(config, 'val', validation_dataset_names) if validation_dataset_names else None
-    test_data_loaders = prepare_eval_data(config, 'test', config['test_dataset']) if config.get('test_dataset') else None
+    test_data_loaders = (
+        prepare_eval_data(config, 'test', config['test_dataset'])
+        if should_run_final_test(config)
+        else None
+    )
 
     # prepare the model (detector)
     model_class = DETECTOR[config['model_name']]
@@ -346,7 +404,7 @@ def main():
             trainer.save_last_ckpt_synchronized(epoch)
     logger.info("Stop Training on best validation metric {}".format(parse_metric_for_print(best_metric)))
 
-    if validation_data_loaders is not None and test_data_loaders is not None:
+    if validation_data_loaders is not None and test_data_loaders is not None and should_run_final_test(config):
         def run_final_test():
             best_validation_ckpt = os.path.join(
                 trainer.log_dir, 'val', 'avg', 'ckpt_best.pth'

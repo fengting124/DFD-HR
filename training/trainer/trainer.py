@@ -38,6 +38,29 @@ from structured_metrics import JSONLMetricsWriter
 FFpp_pool=['FaceForensics++','FF-DF','FF-F2F','FF-FS','FF-NT']#
 
 
+def resolve_validation_iterations(total_batches, epoch, schedule):
+    if total_batches < 1:
+        return set()
+    if isinstance(schedule, int) and not isinstance(schedule, bool):
+        checks = schedule
+    elif isinstance(schedule, dict):
+        required = {'first_epoch', 'later_epochs'}
+        if set(schedule) != required:
+            raise ValueError(
+                'validation_checks_per_epoch must contain only first_epoch and later_epochs'
+            )
+        checks = schedule['first_epoch'] if epoch == 0 else schedule['later_epochs']
+    else:
+        raise ValueError('validation_checks_per_epoch must be an integer or schedule mapping')
+    if isinstance(checks, bool) or not isinstance(checks, int) or checks < 1:
+        raise ValueError('validation check count must be a positive integer')
+    checks = min(checks, total_batches)
+    return {
+        (total_batches * check + checks - 1) // checks
+        for check in range(1, checks + 1)
+    }
+
+
 class Trainer(object):
     def __init__(
         self,
@@ -637,13 +660,14 @@ class Trainer(object):
         ):
 
         self.logger.info("===> Epoch[{}] start!".format(epoch))
-        if epoch>=1:
-            times_per_epoch = 2
-        else:
-            times_per_epoch = 1
-
-
-        test_step = max(1, len(train_data_loader) // times_per_epoch)
+        validation_iterations = resolve_validation_iterations(
+            len(train_data_loader),
+            epoch,
+            self.config.get(
+                'validation_checks_per_epoch',
+                {'first_epoch': 1, 'later_epochs': 2},
+            ),
+        )
         step_cnt = epoch * len(train_data_loader)
         test_best_metric = None
 
@@ -753,7 +777,7 @@ class Trainer(object):
                     recorder.clear()
 
             # run test
-            if (step_cnt+1) % test_step == 0:
+            if iteration + 1 in validation_iterations:
                 if eval_data_loaders is not None:
                     def run_validation():
                         self.logger.info(f"===> {eval_phase.capitalize()} start!")

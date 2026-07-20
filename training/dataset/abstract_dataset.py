@@ -468,8 +468,11 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
             The augmented image, landmark, and mask.
         """
 
-        # Set the seed for the random number generator
+        python_random_state = None
+        numpy_random_state = None
         if augmentation_seed is not None:
+            python_random_state = random.getstate()
+            numpy_random_state = np.random.get_state()
             random.seed(augmentation_seed)
             np.random.seed(augmentation_seed)
 
@@ -484,7 +487,12 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
             kwargs['mask'] = mask
 
         # Apply data augmentation
-        transformed = self.transform(**kwargs)
+        try:
+            transformed = self.transform(**kwargs)
+        finally:
+            if augmentation_seed is not None:
+                random.setstate(python_random_state)
+                np.random.set_state(numpy_random_state)
 
         # Get the augmented image, landmark, and mask
         augmented_img = transformed['image']
@@ -494,11 +502,6 @@ class DeepfakeAbstractBaseDataset(data.Dataset):
         # Convert the augmented landmark to a numpy array
         if augmented_landmark is not None:
             augmented_landmark = np.array(augmented_landmark)
-
-        # Reset the seeds to ensure different transformations for different videos
-        if augmentation_seed is not None:
-            random.seed()
-            np.random.seed()
 
         return augmented_img, augmented_landmark, augmented_mask
 

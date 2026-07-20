@@ -1,6 +1,10 @@
 import sys
+import random
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+
+import numpy as np
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -73,6 +77,27 @@ class DatasetSamplingTests(unittest.TestCase):
         )
 
         self.assertIn("vid0", resolved)
+
+    def test_seeded_augmentation_restores_outer_random_state(self):
+        dataset = SimpleNamespace(
+            transform=lambda **kwargs: {
+                'image': (kwargs['image'], random.random(), np.random.random()),
+            }
+        )
+        random.seed(77)
+        np.random.seed(77)
+        expected = (random.random(), np.random.random())
+        random.seed(77)
+        np.random.seed(77)
+
+        DeepfakeAbstractBaseDataset.data_aug(
+            dataset,
+            img='frame',
+            augmentation_seed=1024,
+        )
+        actual = (random.random(), np.random.random())
+
+        self.assertEqual(actual, expected)
 
 
 if __name__ == "__main__":
