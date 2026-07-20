@@ -41,9 +41,9 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `infra/full-reproduction-preflight`
+Current task branch: `docs/expanded-node-audit`
 
-Completed scope: T4.4 full reproduction resource preflight and node selection
+Completed scope: T4.4 full reproduction resource preflight and expanded candidate comparison
 
 Next task branch: awaiting approval 1 for pinned CLIP asset transfer
 
@@ -623,7 +623,16 @@ checksums.sha256
 - Git 外证据：`.local/full_reproduction_preflight.yaml`、`.local/node_inventory_latest.json`、`.local/asset_transfer_plan.yaml` 及受控 raw audit 目录；均保持未跟踪。公开脱敏报告为 `docs/full_reproduction_preflight_public.md`，提交 `0497dab`。
 - 完整测试为 56 tests OK；本轮未安装软件、未下载或复制资产、未修改系统配置、未运行 GPU benchmark、未启动 Mini Run 或完整训练。
 
-下一步：等待批准 1（在首选节点下载或复制 pinned CLIP snapshot）。批准 1 只允许资产落地与 revision/size/SHA-256/必要文件校验，不包含节点环境准备、pretrained Smoke 或完整训练；后续批准 2、3、4 仍需分别取得。
+补充候选比较：**DONE**。完成证据（2026-07-20）：
+
+- 对五个指定候选分别执行一次有限超时、非交互、只读 SSH 检查；只采集聚合 GPU 状态、当前用户可见存储、环境、FF++ 数据/JSON、pinned CLIP 和单元测试，不读取进程明细。
+- `additional 3090 candidate C` 的 FF++ JSON 哈希、split 计数与互斥性、30/30 路径和 56 tests 均通过，约 2.71 TiB 可用；训练环境可用但缺 Jupyter 依赖，pinned CLIP 缺失，采样时一卡轻载、另一卡空闲。结论 `READY_AFTER_SMALL_ASSET_FIX / COORDINATION_REQUIRED`，成为明确预约后的速度优先候选。
+- `additional 3090 candidate D` 的 FF++ 数据 30/30 路径存在且约 1.56 TiB 可用，但采样时两卡满载，环境、JSON 和 pinned CLIP 缺失。结论 `BLOCKED_BY_GPU / ENVIRONMENT / CLIP`。
+- 原 `3090 candidate A/B` 与 `evaluation node` 的新鲜状态和既有结论一致；所有五个指定候选均缺 pinned CLIP，因此没有节点达到可立即启动正式训练的状态。
+- Git 外证据：`.local/candidate_comparison_latest.yaml` 和受控 raw audit 目录；公开报告只增加匿名角色，不记录真实节点名、内部路径、端口或进程信息。
+- 本轮未安装软件、未复制数据或权重、未修改系统配置、未运行 benchmark、Smoke、Mini Run 或完整训练。
+
+下一步：在 controller node 与 `additional 3090 candidate C` 之间确认连续 GPU 预约；随后等待批准 1，在最终选定节点下载或复制 pinned CLIP snapshot。批准 1 只允许资产落地与 revision/size/SHA-256/必要文件校验，不包含节点环境准备、pretrained Smoke 或完整训练；后续批准 2、3、4 仍需分别取得。
 
 ### T4.5 跨数据集最终评估
 

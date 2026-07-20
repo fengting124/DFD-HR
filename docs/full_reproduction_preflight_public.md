@@ -31,6 +31,8 @@ FaceForensics++ JSON 审计得到 train/validation/test 视频计数 `2156/420/4
 | 3090 candidate A | 2 × RTX 3090，当前有负载 | 数据 30/30，JSON 缺失 | Missing | Missing | 29% used，约 2.48 TiB free | `BLOCKED_BY_GPU / ENVIRONMENT / CLIP` |
 | 3090 candidate B | 2 × RTX 3090，显存被占用 | 数据 30/30，JSON 缺失 | Missing | Missing | 90% used，约 375 GiB free | `NOT_RECOMMENDED` |
 | evaluation node | 2 × RTX 3090，采样时空闲 | JSON 与 30/30 路径通过 | Tests pass，Jupyter 依赖不完整 | Missing | 98% used，约 81 GiB free | `BLOCKED_BY_STORAGE` |
+| additional 3090 candidate C | 2 × RTX 3090，一卡轻载、另一卡空闲 | JSON 与 30/30 路径通过 | Tests pass，Jupyter 依赖不完整 | Missing | 23% used，约 2.71 TiB free | `READY_AFTER_SMALL_ASSET_FIX / COORDINATION_REQUIRED` |
+| additional 3090 candidate D | 2 × RTX 3090，采样时满载 | 数据 30/30，JSON 缺失 | Missing | Missing | 55% used，约 1.56 TiB free | `BLOCKED_BY_GPU / ENVIRONMENT / CLIP` |
 | archive candidate | 未完成专项审计 | 未要求 | 未要求 | 未要求 | 未验证 | `UNRESOLVED` |
 
 GPU 状态只代表单次采样，不构成预约或连续可用承诺。
@@ -40,6 +42,8 @@ GPU 状态只代表单次采样，不构成预约或连续可用承诺。
 当前首选训练角色为 **controller node**。它已具备 FF++ 数据、JSON、环境、测试、输出空间和已验证的有限显存链路，只缺约 1.71 GB 的 pinned CLIP 模型文件及小型配套配置。该方案资产移动最少、协议风险最低，可以在不复制数据集或环境的前提下完成下一阶段 Preflight。
 
 RTX 2080 Ti 的代价是预计训练更慢。现有证据只证明 micro-batch 1 配合梯度累积可运行，不能据此推断完整训练时长；CLIP 落地后仍需单独批准相同配置的有限吞吐 Smoke。
+
+补充审计后，**additional 3090 candidate C** 成为速度优先候选：数据、JSON、训练环境、测试和空间均满足，只缺 pinned CLIP；Jupyter 依赖缺失不阻塞命令行训练。该节点采样时并非两卡完全空闲，且既有调度约束仍然有效，因此只有在明确协调出连续双卡时段后才能替代 controller node。其余新增候选没有降低当前准备成本。
 
 ## 备选方案
 
