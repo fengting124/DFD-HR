@@ -129,7 +129,13 @@ class Trainer(object):
     def _ensure_finite_gradients(self):
         for parameter in self.model.parameters():
             if parameter.grad is not None and not torch.isfinite(parameter.grad).all():
+                if self.amp_enabled:
+                    self.logger.warning(
+                        'Non-finite gradient detected; GradScaler will skip the optimizer step'
+                    )
+                    return False
                 raise FloatingPointError('Non-finite gradient detected')
+        return True
 
     def get_writer(self, phase, dataset_key, metric_key):
         writer_key = f"{phase}-{dataset_key}-{metric_key}"

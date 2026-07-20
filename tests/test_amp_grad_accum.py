@@ -30,7 +30,14 @@ class TinyModel(torch.nn.Module):
 
 
 class AmpGradAccumTests(unittest.TestCase):
-    def make_trainer(self, *, amp=False, accumulation_steps=1, optimizer_type="adam"):
+    def make_trainer(
+        self,
+        *,
+        amp=False,
+        accumulation_steps=1,
+        optimizer_type="adam",
+        device="cpu",
+    ):
         trainer = Trainer.__new__(Trainer)
         trainer.config = {
             "amp": amp,
@@ -40,8 +47,8 @@ class AmpGradAccumTests(unittest.TestCase):
             "optimizer": {"type": optimizer_type},
         }
         trainer.logger = Mock()
-        trainer.device = torch.device("cpu")
-        trainer.model = TinyModel()
+        trainer.device = torch.device(device)
+        trainer.model = TinyModel().to(trainer.device)
         trainer.optimizer = torch.optim.SGD(trainer.model.parameters(), lr=0.1)
         trainer._configure_optimization_runtime()
         return trainer
@@ -107,6 +114,23 @@ class AmpGradAccumTests(unittest.TestCase):
             )
             self.assertIs(config["amp"], False)
             self.assertEqual(config["gradient_accumulation_steps"], 1)
+
+    @unittest.skipUnless(torch.cuda.is_available(), "CUDA is required for AMP coverage")
+    def test_cuda_amp_step_is_finite(self):
+        trainer = self.make_trainer(amp=True, device="cuda")
+        trainer.optimizer.zero_grad(set_to_none=True)
+        data = {
+            "x": torch.tensor([[1.0]], device="cuda"),
+            "y": torch.tensor([[0.0]], device="cuda"),
+        }
+        initial_scale = trainer.scaler.get_scale()
+
+        trainer.train_step(data, should_step=True, accumulation_divisor=1)
+
+        self.assertTrue(trainer.amp_enabled)
+        self.assertTrue(torch.isfinite(trainer.model.linear.weight).all())
+        self.assertLess(trainer.scaler.get_scale(), initial_scale)
+        trainer.logger.warning.assert_called_once()
 
 
 if __name__ == "__main__":
