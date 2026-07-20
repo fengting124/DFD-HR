@@ -1,0 +1,104 @@
+experiment_id: REPLACE_ME
+status: planned
+created_at: REPLACE_ME
+updated_at: REPLACE_ME
+
+objective: >
+  明确本实验要验证的问题。
+
+hypothesis: >
+  明确预期结果及其原因。
+
+baseline:
+  experiment_id: null
+  checkpoint_sha256: null
+
+single_changed_variable: REPLACE_ME
+
+success_criteria:
+  - REPLACE_ME
+
+protocol:
+  name: ffpp_c23_cross_dataset
+  train_dataset:
+    - FaceForensics++
+  validation_dataset:
+    - FaceForensics++
+  test_datasets:
+    - Celeb-DF-v2
+  compression: c23
+  train_frames_per_video: 8
+  validation_frames_per_video: 32
+  test_frames_per_video: 32
+
+model:
+  name: dfd_hr
+  backbone: ViT-L/14
+  resolution: 448
+  capacity: 0.75
+  routed_layers: [20, 21, 22, 23]
+  moe:
+    num_experts: 4
+    top_k: REPLACE_ME
+    noise: REPLACE_ME
+
+training:
+  epochs: REPLACE_ME
+  precision: REPLACE_ME
+  gpu_count: REPLACE_ME
+  per_gpu_batch: REPLACE_ME
+  gradient_accumulation_steps: REPLACE_ME
+  effective_batch_size: REPLACE_ME
+  optimizer: Adam
+  learning_rate: 0.0001
+  workers_per_process: REPLACE_ME
+  seed: 1024
+
+initialization:
+  clip_pretrained: openai/clip-vit-large-patch14
+  dfd_hr_checkpoint: null
+  independent_reproduction: true
+
+version:
+  git_branch: REPLACE_ME
+  git_commit: REPLACE_ME
+  git_dirty: false
+  config_sha256: REPLACE_ME
+  dataset_json_sha256: REPLACE_ME
+  initial_weight_sha256: REPLACE_ME
+
+runtime:
+  node_role: REPLACE_ME
+  python_executable: REPLACE_ME
+  torch_version: REPLACE_ME
+  cuda_version: REPLACE_ME
+  gpu_model: REPLACE_ME
+  gpu_indices: REPLACE_ME
+
+storage:
+  runtime_root: ${DFDHR_RUNTIME_ROOT}
+  archive_root: ${DFDHR_ARCHIVE_ROOT}
+  maximum_local_size_gib: REPLACE_ME
+  save_features: false
+  keep_best: true
+  keep_last: true
+  keep_every_epoch: false
+
+validation:
+  preflight_passed: false
+  single_gpu_smoke_passed: false
+  checkpoint_roundtrip_passed: false
+  ddp_smoke_passed: false
+
+artifacts:
+  resolved_config: config.resolved.yaml
+  command: command.sh
+  environment: environment.txt
+  git_record: git.txt
+  metrics: metrics.jsonl
+  log: training.log
+  summary: summary.md
+  checksums: checksums.sha256
+
+failure_reason: null
+notes: null
