@@ -724,7 +724,8 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 - 最终 3090 配置冻结为每卡 batch `8`、累积 `1`、validation batch `32`、每 rank workers `4`；这比梯度累积回退更接近论文 physical batch 16。受限指标只证明链路，不作研究解释，门禁未写正式 checkpoint。
 - PR `#23` 已 squash 合并到 `main`，合并提交 `6ce9bfb`。正式 RUN `_007` 绑定该提交并通过 config/manifest/资产哈希、双卡、70 GiB 空间门与 lifecycle verify 后启动；epoch 0 的 1078 个训练 step 全部完成，末步 loss 有限，显存与磁盘稳定。
 - `_007` 在首次完整 validation 的第 `160/420` batch 失败：rank 0 验证运行超过 30 分钟，rank 1 等待后续 broadcast 时触发 PyTorch 默认 NCCL watchdog timeout。无 validation 事件、best 或 last checkpoint 产生，RUN 已如实标记 `failed` 并通过路径、checksum 和预算 verify，禁止复用或伪装恢复。
-- 正式配置现显式固定 `ddp_timeout_minutes: 180`；训练入口验证其为正整数并将其传给 process-group 初始化，生命周期 manifest 同步记录。未设置该字段的旧配置仍保持 30 分钟默认；默认、180 分钟和非法值均有回归测试，完整测试为 83 tests OK。
+- 正式配置现显式固定 `ddp_timeout_minutes: 180`；训练入口验证其为正整数并将其传给 process-group 初始化，生命周期 manifest 同步记录。未设置该字段的旧配置仍保持 30 分钟默认；默认、180 分钟和非法值均有回归测试，本地和目标 3090 环境均为 83 tests OK。
+- 提交 `035c8b9` 的目标端受限双卡门禁在两 rank 日志中均记录 180 分钟 timeout，完成每 rank 4 个 physical batch `8` 训练 step、rank-zero validation 和后续同步后正常退出；未写 checkpoint，GPU 已释放。
 
 下一步：在真实双卡上执行包含 rank-zero validation 的 timeout 配置门禁；审查并合并 `fix/ddp-validation-timeout` 后，从新 `main` 创建 RUN `_008` 并重新开始 20 epoch。不得复用 `_007`、旧 RUN_ID 或旧 `top_k=2` checkpoint。
 
