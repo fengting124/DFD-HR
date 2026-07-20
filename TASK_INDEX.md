@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `docs/expanded-node-audit`
+Current task branch: `test/pretrained-clip-smoke`
 
-Completed scope: T4.4 full reproduction resource preflight and expanded candidate comparison
+Completed scope: pinned CLIP initialization support for bounded single/DDP Smoke
 
-Next task branch: awaiting GPU reservation and approval for pretrained initialization smoke
+Next task branch: remain on current branch until pretrained Smoke evidence is complete
 
 ## 3. 当前里程碑
 
@@ -644,6 +644,17 @@ Pinned CLIP 资产落地：**DONE**。完成证据（2026-07-20）：
 - 未复制数据集、Conda 环境或官方 DFD-HR checkpoint；未安装软件、修改系统配置、运行 GPU benchmark、Smoke、Mini Run 或正式训练。
 
 下一步：优先协调 `additional 3090 candidate C` 的连续双卡预约；获得单独批准后，使用 pinned CLIP 和正式候选配置执行有限 pretrained initialization Smoke。若无法预约 3090，则在 controller node 的 2 × RTX 2080 Ti 上执行同一 Smoke；4 × RTX 2080 Ti 候选仅在四卡明确释放后重新评估。
+
+Pretrained initialization Smoke：**BLOCKED_BY_CURRENT_GPU_USE**。当前证据（2026-07-20）：
+
+- 提交 `7fd60a6` 为单卡两批次和双卡 20-step Smoke 增加显式本地 pinned CLIP 初始化；该路径与 DFD-HR checkpoint 加载互斥，强制 Transformers 离线读取 safetensors，并在报告中记录初始化类型、大小、SHA-256 和 `dfd_checkpoint_loaded=false`。
+- 旧的 DFD-HR checkpoint Smoke 参数和来源报告字段保持兼容；mocked loader 测试确认显式本地路径、`local_files_only=True` 和 `use_safetensors=True` 均传入 Transformers。
+- `controller node` 与 `additional 3090 candidate C` 的现有环境分别运行 59 tests，全部通过；候选节点绑定干净提交 `7fd60a6`，数据、JSON、pinned CLIP 和约 2.71 TiB 可用空间仍满足。
+- 用户已批准在首选 3090 候选推进下一阶段；启动门禁在独立 `tmux` 中按 60 秒间隔执行五次聚合采样。一张卡持续 98-99% 利用率，另一张在 3-41% 波动，两卡显存均有既有占用，因此未达到连续两次稳定空闲条件。
+- 等待会话已停止并记录 `smoke_started=false`；Smoke 输出目录未创建，未实例化模型、未读取训练 batch、未写 checkpoint，也未读取进程明细或干扰现有任务。
+- Git 外证据：pretrained Smoke 审计日志和本地资产记录；公开记录保持匿名。草稿 PR 为 `#18`。
+
+下一步：确认 `additional 3090 candidate C` 的两卡现有任务结束或取得明确预约后，重新执行新鲜双样本空闲门禁；先运行单卡 AMP 两批次 pretrained Smoke，校验初始化哈希、梯度、冻结参数、显存和 checkpoint round-trip，再决定是否进入双卡 20-step pretrained DDP Smoke。不得直接启动 Mini Run 或完整训练。
 
 ### T4.5 跨数据集最终评估
 
