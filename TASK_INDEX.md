@@ -48,19 +48,34 @@ git log --oneline --decorate -12
 
 ### T0.1 建立新控制节点
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] SSH 连接稳定。
-- [ ] 共享项目目录可见。
-- [ ] `docs/experiment-workflow` 可检出，工作树干净。
-- [ ] `.local/infrastructure.yaml` 已根据模板创建且未被 Git 跟踪。
-- [ ] 预期 Conda/Python 环境存在并可导入 PyTorch、Transformers、OpenCV 等核心依赖。
-- [ ] CUDA 和 GPU 可见。
-- [ ] 当前测试集通过。
-- [ ] 能对目标节点执行单次、有限超时、非交互 SSH 检查。
-- [ ] 审计输出只写入当前用户的 Git 外运行目录。
+- [x] SSH 连接稳定。
+- [x] 共享项目目录可见。
+- [x] `docs/experiment-workflow` 可检出，工作树干净。
+- [x] `.local/infrastructure.yaml` 已根据模板创建且未被 Git 跟踪。
+- [x] 预期 Conda/Python 环境存在并可导入 PyTorch、Transformers、OpenCV 等核心依赖。
+- [x] CUDA 和 GPU 可见。
+- [x] 当前测试集通过。
+- [x] 能对目标节点执行单次、有限超时、非交互 SSH 检查。
+- [x] 审计输出只写入当前用户的 Git 外运行目录。
 
 证据：时间戳、hostname、Git 分支/提交、Python 路径、PyTorch/CUDA、测试摘要、scratch 空间。
+
+完成证据（2026-07-20 16:36 +08:00，原始节点名和内部路径仅保存在 Git 外本地审计记录）：
+
+- 控制节点候选可见共享仓库，分支 `docs/experiment-workflow`，提交 `366b84eb157aac9f78edf30d80ebbafa4aeb0f0c`。
+- `.local/infrastructure.yaml` 已创建，`git check-ignore -v` 确认为 `.gitignore` 的 `.local/` 规则忽略。
+- 约定 DFD-HR Python 可执行，导入通过：PyTorch `2.3.1+cu121`、Transformers `4.44.2`、OpenCV `4.5.4`、lmdb `1.4.1`、sklearn `1.3.0`；CUDA runtime `12.1`，CUDA available，GPU count `2`。
+- 本机 GPU：2 x NVIDIA GeForce RTX 2080 Ti，单卡 11264 MiB，采样时 GPU 利用率 0%。
+- 本机 CPU/RAM：Intel Core i7-9700K，1 socket，8 physical cores，8 threads；RAM 62 GiB。
+- 本机 scratch：约 1.8 TiB total，1005 GiB available，inode 使用约 7%。
+- 单元测试：`${DFDHR_PYTHON} -m unittest discover -s tests -v`，9 tests OK。
+- 远端有限 SSH 探测能力确认：新增节点 A/B 均可一次性非交互返回 hostname。
+
+提交：未提交，当前仅更新任务索引和 Git 外 `.local/infrastructure.yaml`。
+
+下一步：修复新增节点 A/B 的本地环境、JSON 注册表和官方权重缺口后，才能进入 Smoke Test 前置检查。
 
 ### T0.2 原控制节点有限重检
 
@@ -68,73 +83,135 @@ git log --oneline --decorate -12
 
 当前观察为连接超时。只允许从新控制节点执行一次有限重检：
 
-- [ ] 记录 DNS/别名解析。
-- [ ] 记录 TCP/SSH 结果。
-- [ ] 记录时间戳。
+- [x] 记录 DNS/别名解析。
+- [x] 记录 TCP/SSH 结果。
+- [x] 记录时间戳。
 
 不得高频重试，不得修改 SSH、网络、路由或防火墙。只有新鲜成功连接证据才能恢复其控制、训练或归档角色。
 
+阻塞证据（2026-07-20 16:37 +08:00）：从新控制节点执行一次有限超时 SSH 重检，原控制节点返回 `No route to host`。未重试，未修改 SSH、网络、路由或防火墙。
+
+提交：未提交。
+
+下一步：等待外部网络/节点恢复证据；恢复前不得作为控制、训练或归档节点。
+
 ### T0.3 扩展审计目标
 
-**状态：TODO**
+**状态：DONE**
 
 从 `.local/infrastructure.yaml` 读取全部现有节点和两台新增节点。每台节点仅收集：
 
-- [ ] 可达性和规范 hostname。
-- [ ] CPU 型号、插槽、物理核心、线程。
-- [ ] 总 RAM、可用 RAM。
-- [ ] GPU 型号、数量、VRAM、驱动、CUDA compatibility。
-- [ ] 当前 GPU 利用率和是否适合新的独占任务。
-- [ ] scratch 文件系统、总量、普通用户可用空间、使用率、inode。
-- [ ] 共享代码目录可见性。
-- [ ] 当前用户本地运行目录可用性。
+- [x] 可达性和规范 hostname。
+- [x] CPU 型号、插槽、物理核心、线程。
+- [x] 总 RAM、可用 RAM。
+- [x] GPU 型号、数量、VRAM、驱动、CUDA compatibility。
+- [x] 当前 GPU 利用率和是否适合新的独占任务。
+- [x] scratch 文件系统、总量、普通用户可用空间、使用率、inode。
+- [x] 共享代码目录可见性。
+- [x] 当前用户本地运行目录可用性。
 - [ ] 是否存在调度器和监控能力；不安装任何组件。
 
 禁止读取其他用户的命令行、环境变量、shell 历史、项目内容、数据内容、私钥或凭据。
 
+完成证据（2026-07-20 16:37-16:38 +08:00）：已从 `.local/infrastructure.yaml` 读取控制节点候选、原控制节点、新增节点 A、新增节点 B、高显存 Smoke 候选和长期占用节点角色；本轮只对控制节点候选、原控制节点、新增节点 A/B 执行有限审计。新增节点 A/B 均可达并可见共享仓库；原控制节点不可达。未安装组件，未复制数据，未修改系统配置。
+
+提交：未提交。
+
+下一步：若需要选择归档节点或 Smoke 候选，单独审计高显存 Smoke 候选和长期占用节点的当前状态。
+
 ### T0.4 新增节点 A 审计
 
-**状态：TODO**
+**状态：DONE**
 
 硬件：
 
-- [ ] CPU/RAM。
-- [ ] GPU 型号、数量、单卡 VRAM。
-- [ ] NVIDIA 驱动和 CUDA compatibility。
-- [ ] 当前 GPU 状态。
-- [ ] scratch 和根分区容量。
-- [ ] 从控制节点可达。
+- [x] CPU/RAM。
+- [x] GPU 型号、数量、单卡 VRAM。
+- [x] NVIDIA 驱动和 CUDA compatibility。
+- [x] 当前 GPU 状态。
+- [x] scratch 和根分区容量。
+- [x] 从控制节点可达。
 
 DFD-HR 就绪性：
 
-- [ ] 共享仓库可见。
-- [ ] 数据根存在。
+- [x] 共享仓库可见。
+- [x] 数据根存在。
 - [ ] 必需数据集目录存在。
 - [ ] 数据集 JSON 注册表存在。
 - [ ] train/validation/test 抽样路径可解析。
-- [ ] DFD-HR 环境是否存在；若不存在只记录，不安装或复制。
+- [x] DFD-HR 环境是否存在；若不存在只记录，不安装或复制。
 - [ ] 官方 checkpoint 是否存在，SHA-256 是否匹配。
 - [ ] 环境存在时运行单元测试。
-- [ ] 输出空间是否适合 Smoke Test 或训练。
+- [x] 输出空间是否适合 Smoke Test 或训练。
+
+完成证据（2026-07-20 16:37-16:38 +08:00）：
+
+- 可达；共享仓库分支 `docs/experiment-workflow`，提交 `366b84eb157aac9f78edf30d80ebbafa4aeb0f0c`。
+- CPU/RAM：Intel Core i9-12900K，1 socket，16 physical cores，24 threads；RAM 62 GiB，采样 available 55 GiB。
+- GPU：2 x NVIDIA GeForce RTX 3090，单卡 24576 MiB；driver `580.159.03`，CUDA compatibility `13.0`。
+- GPU 采样状态：两卡正在使用，utilization 约 99%/49%，free VRAM 约 16.1/16.6 GiB；不建议立即调度独占训练。
+- scratch：约 3.6 TiB total，2.5 TiB available，inode 使用约 4%；根分区约 457 GiB total，356 GiB available。
+- 数据根存在；有限目录检查存在 FaceForensics++、Celeb-DF-v2、DF40、DFDC、DFDCP、WildDeepfake，缺 DeeperForensics、FFIW。
+- JSON 注册表 symlink 存在但目标缺失，无法进行 JSON SHA-256 和 train/validation/test 抽样路径解析。
+- 约定 DFD-HR Python 环境缺失；因此未运行单元测试。
+- 官方 checkpoint 未在约定搜索深度内发现，未获得 SHA-256。
+- 推荐角色：暂不作为训练节点；可在补齐环境、JSON、权重并重新检查 GPU 空闲后再考虑 Smoke/训练。
+
+提交：未提交。
+
+下一步：只在取得确认后准备本地环境、JSON 注册表和官方权重；补齐前不得启动 Smoke Test 或训练。
+
+工作树：当前因本次任务索引更新而非干净；`.local/infrastructure.yaml` 被 Git 忽略。
 
 ### T0.5 新增节点 B 审计
 
-**状态：TODO**
+**状态：DONE**
 
 使用与 T0.4 相同的清单，单独记录。不得根据节点 A 推断节点 B 的硬件、数据或环境一致性。
 
+完成证据（2026-07-20 16:37-16:38 +08:00）：
+
+- 可达；共享仓库分支 `docs/experiment-workflow`，提交 `366b84eb157aac9f78edf30d80ebbafa4aeb0f0c`。
+- CPU/RAM：Intel Core i9-10900K，1 socket，10 physical cores，20 threads；RAM 62 GiB，采样 available 22 GiB。
+- GPU：2 x NVIDIA GeForce RTX 3090，单卡 24576 MiB；driver `580.159.03`，CUDA compatibility `13.0`。
+- GPU 采样状态：两卡满载，free VRAM 约 1.6/1.9 GiB；不适合新的独占任务。
+- scratch：约 3.6 TiB total，376 GiB available，使用率 90%，inode 使用约 17%；根分区约 457 GiB total，356 GiB available。
+- 数据根存在；有限目录检查存在 FaceForensics++、Celeb-DF-v2、DF40、DFDC、DFDCP、WildDeepfake，缺 DeeperForensics、FFIW。
+- JSON 注册表 symlink 存在但目标缺失，无法进行 JSON SHA-256 和 train/validation/test 抽样路径解析。
+- 约定 DFD-HR Python 环境缺失；因此未运行单元测试。
+- 官方 checkpoint 未在约定搜索深度内发现，未获得 SHA-256。
+- 推荐角色：暂不作为 Smoke 或训练节点；即使补齐环境，也需先释放 GPU 并缓解 scratch 空间压力。
+
+提交：未提交。
+
+下一步：优先确认是否需要清理/扩容当前用户 scratch 预算和补齐环境；补齐前不得启动 Smoke Test 或训练。
+
+工作树：当前因本次任务索引更新而非干净；`.local/infrastructure.yaml` 被 Git 忽略。
+
 ### T0.6 数据集与环境一致性
 
-**状态：TODO**
+**状态：BLOCKED**
 
 第一阶段至少检查：
 
 - [ ] FaceForensics++ c23：train/validation/test。
-- [ ] Celeb-DF-v2。
+- [x] Celeb-DF-v2。
 - [ ] 当前测试配置引用的 DFD、DFDC、DFDCP、DeeperForensics、WildDeepfake、FFIW。
-- [ ] 当前复现计划需要的 DF40 方法子集。
+- [x] 当前复现计划需要的 DF40 方法子集。
 
 方法：目录存在性和有限计数、JSON SHA-256、各 split 抽样路径、环境包清单、官方权重哈希。审计阶段不得复制数据或环境。
+
+阻塞证据（2026-07-20 16:38 +08:00）：
+
+- 控制节点候选数据根存在，且本地官方 checkpoint `dfd_hr_ffpp.pth` 存在，size 1.6 GiB，SHA-256 `bbf2b1c805fe545a1ac1ead36e3c4341a78b5a6334766dd875dc6d1a940944ec`。
+- 新增节点 A/B 的数据根均存在，但 JSON 注册表 symlink 目标缺失，无法计算 JSON SHA-256 或解析 split 抽样路径。
+- 新增节点 A/B 约定 DFD-HR Python 环境缺失，无法采集环境包清单或运行单元测试。
+- 新增节点 A/B 未找到官方 checkpoint，无法比较 SHA-256。
+- 新增节点 A/B 有 FaceForensics++、Celeb-DF-v2、DF40、DFDC、DFDCP、WildDeepfake；缺 DeeperForensics、FFIW。DFD/DeepFakeDetection 需进一步确认是否映射到现有 DFDCP/FaceForensics++ 目录或另有目录名。
+
+提交：未提交。
+
+下一步：补齐或重新指向新增节点 A/B 的 JSON 注册表、环境和官方权重后，重新执行 JSON SHA-256、split 抽样路径和单元测试审计。
 
 ### T0.7 生成脱敏结果报告
 
