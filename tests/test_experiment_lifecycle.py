@@ -16,6 +16,7 @@ from experiment_lifecycle import (  # noqa: E402
     REGISTRY_FIELDS,
     assert_resolved,
     freeze_config,
+    set_run_status,
     validate_public_text,
     validate_run_id,
     verify_checksums,
@@ -53,13 +54,14 @@ class ExperimentLifecycleTests(unittest.TestCase):
             detector = root / 'detector.yaml'
             base = root / 'base.yaml'
             destination = root / 'run/config.resolved.yaml'
-            detector.write_text('model_name: dfd_hr\nsave_feat: true\n', encoding='utf-8')
-            base.write_text('label_dict:\n  real: 0\n', encoding='utf-8')
+            detector.write_text('model_name: dfd_hr\nsave_feat: true\nworkers: 0\n', encoding='utf-8')
+            base.write_text('label_dict:\n  real: 0\nworkers: 8\n', encoding='utf-8')
 
             config, digest = freeze_config(detector, base, destination, root / 'run')
 
             self.assertEqual(len(digest), 64)
             self.assertEqual(config['label_dict'], {'real': 0})
+            self.assertEqual(config['workers'], 0)
             self.assertFalse(config['save_feat'])
             self.assertTrue(config['save_ckpt'])
             self.assertEqual(config['run_id'], 'run')
@@ -81,6 +83,30 @@ class ExperimentLifecycleTests(unittest.TestCase):
         with (PROJECT_ROOT / 'registry/experiments.csv').open(newline='', encoding='utf-8') as file:
             reader = csv.reader(file)
             self.assertEqual(tuple(next(reader)), REGISTRY_FIELDS)
+
+    def test_status_update_records_failure_and_refreshes_checksums(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            run_dir = Path(temp_dir)
+            (run_dir / 'manifest.yaml').write_text(
+                yaml.safe_dump({
+                    'status': 'planned',
+                    'updated_at': 'old',
+                    'failure_reason': None,
+                }),
+                encoding='utf-8',
+            )
+            write_checksums(run_dir)
+
+            manifest = set_run_status(
+                run_dir,
+                'failed',
+                'bounded validation failed',
+                updated_at='new',
+            )
+
+            self.assertEqual(manifest['status'], 'failed')
+            self.assertEqual(manifest['failure_reason'], 'bounded validation failed')
+            self.assertTrue(verify_checksums(run_dir))
 
 
 if __name__ == '__main__':

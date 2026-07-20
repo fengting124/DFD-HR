@@ -157,6 +157,8 @@ Smoke Test 只验证链路，不得作为研究结果。
 - last 恢复后 epoch、optimizer、scheduler、scaler 和 RNG 连续。
 - 日志、metrics.jsonl、退出状态完整。
 
+若 Mini Run 仅用于工程闭环且预训练资产尚未就绪，可以使用 `architecture_only_random` 初始化，但必须在 manifest 和总结中明确 `clip_pretrained=false`，不得解释其指标。完整训练仍必须使用来源、大小和 SHA-256 均已确认的 CLIP 预训练资产。
+
 ### 5.5 正式训练
 
 - 使用 `tmux` 或调度器启动。

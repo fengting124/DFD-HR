@@ -152,11 +152,10 @@ def sha256_file(path):
 
 
 def freeze_config(source_path, base_config_path, destination_path, run_dir):
-    with open(source_path, encoding='utf-8') as file:
-        config = yaml.safe_load(file) or {}
     with open(base_config_path, encoding='utf-8') as file:
-        base_config = yaml.safe_load(file) or {}
-    config.update(base_config)
+        config = yaml.safe_load(file) or {}
+    with open(source_path, encoding='utf-8') as file:
+        config.update(yaml.safe_load(file) or {})
     run_dir = Path(run_dir).resolve()
     output_dir = run_dir / 'training'
     config.update({
@@ -369,6 +368,7 @@ def initialize_run(args):
         'ddp_smoke_passed': args.ddp_smoke_passed,
     })
     manifest['initialization'].update({
+        'clip_pretrained': bool(config.get('backbone_pretrained', True)),
         'dfd_hr_checkpoint': str(Path(args.initial_weight).resolve()) if args.initial_weight else None,
         'independent_reproduction': not bool(args.initial_weight),
     })
@@ -521,6 +521,33 @@ def archive_run(args):
     print('archive_verified=true source_retained=true')
 
 
+def set_run_status(run_dir, status, failure_reason=None, updated_at=None):
+    if status not in STATUSES:
+        raise ValueError(f'Unsupported experiment status: {status}')
+    if failure_reason and status not in {'failed', 'aborted'}:
+        raise ValueError('A failure reason is only valid for failed or aborted runs.')
+    manifest_path = Path(run_dir) / 'manifest.yaml'
+    with manifest_path.open(encoding='utf-8') as file:
+        manifest = yaml.safe_load(file)
+    manifest['status'] = status
+    manifest['updated_at'] = updated_at or datetime.now(timezone.utc).isoformat()
+    manifest['failure_reason'] = failure_reason
+    assert_resolved(manifest)
+    atomic_write_text(
+        manifest_path,
+        yaml.safe_dump(manifest, sort_keys=False, allow_unicode=False),
+    )
+    write_checksums(run_dir)
+    return manifest
+
+
+def update_run_status(args):
+    paths = require_environment()
+    run_dir = paths['DFDHR_RUNTIME_ROOT'] / 'runs' / validate_run_id(args.run_id)
+    set_run_status(run_dir, args.status, args.failure_reason)
+    print(f'run_status={args.status}')
+
+
 def build_parser():
     parser = argparse.ArgumentParser(description='Manage DFD-HR experiment lifecycle metadata.')
     subparsers = parser.add_subparsers(dest='command_name', required=True)
@@ -587,6 +614,12 @@ def build_parser():
     archive_parser.add_argument('--run-id', required=True)
     archive_parser.add_argument('--execute', action='store_true')
     archive_parser.set_defaults(handler=archive_run)
+
+    status_parser = subparsers.add_parser('status')
+    status_parser.add_argument('--run-id', required=True)
+    status_parser.add_argument('--status', required=True, choices=sorted(STATUSES))
+    status_parser.add_argument('--failure-reason')
+    status_parser.set_defaults(handler=update_run_status)
     return parser
 
 

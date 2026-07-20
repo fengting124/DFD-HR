@@ -2,7 +2,7 @@
 
 本文件是新机器、新 Codex 会话和实验中断后的任务入口。通用规范见 `AGENTS.md`，详细实验流程见 `docs/EXPERIMENT_WORKFLOW.md`。
 
-> 当前状态：控制节点审计、实验生命周期、Jupyter 00-05、训练正确性修复及单/双卡 Smoke 已有证据；Mini Run、完整训练、归档实跑和新增节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
+> 当前状态：控制节点审计、实验生命周期、Jupyter 00-05、训练正确性修复、单/双卡 Smoke 及随机架构 Mini Run 已有证据；完整训练、归档实跑和新增节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
 
 ## 1. 启动顺序
 
@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `feat/structured-training-metrics`
+Current task branch: `test/mini-run`
 
-Completed scope: T1.5 structured training metrics and read-only monitor
+Completed scope: T4.3 one-epoch bounded Mini Run
 
-Next task branch: `test/mini-run`
+Next task branch: `infra/clip-asset-source`
 
 ## 3. 当前里程碑
 
@@ -582,17 +582,32 @@ checksums.sha256
 
 ### T4.3 Mini Run
 
-**状态：TODO**
+**状态：DONE**
 
 固定小子集，1–3 epoch。只验证训练闭环，不作为论文结果。
 
-下一步：从更新后的 `main` 创建 `test/mini-run`，先冻结小子集、配置、空间预算和成功标准，再执行 1 epoch；不得复用官方权重，不得扩展为完整训练。
+完成证据（2026-07-20）：
+
+- 提交 `95034a3` 修正 base/experiment 配置优先级，增加 train/val/test 确定性二分类内存子集和 Mini 配置生成器；未复制数据或 JSON。提交 `240e8ac` 将单样本 batch 不可计算的 AUC/EER 记录为 JSON `null`，并增加 lifecycle status 原子收口命令。完整测试为 56 tests OK。
+- Git 外失败编号 `_001` 在首批后因不可计算指标的 `None` 适配缺失而退出，已标记 `failed`、写明原因、刷新 checksums 并通过 verify；编号未复用。
+- RUN_ID `dfdhr_ffppc23_mini-random_20260720_002` 绑定干净提交 `240e8ac`，固定 FaceForensics++ c23 train/val/test 为 16/8/8 个平衡样本，所有 32 个路径存在。单卡 AMP，micro-batch `1`、累积 `16`、有效 batch `16`、1 epoch、seed `1024`。
+- 本机和共享 scratch 未定位到可验证的 CLIP ViT-L/14 预训练资产；本次 manifest 明确记录 `clip_pretrained=false`、无 DFD-HR checkpoint，使用 architecture-only random initialization。结果只验证工程闭环。
+- 正常产生 16 个 train、1 个 validation 和 1 个 final-test 结构化事件；validation/test frame AUC 与 video AUC 均为 `0.4375`，仅作链路证据。峰值 CUDA allocated `5169022464` bytes，运行目录 `4930651542` bytes。
+- best/last 均为 `2465259076` bytes，无 `.tmp`；last SHA-256 `c98e5f60f2631049418104379482cd1df82f70314f99e1ca9086a4519aa9544a`，best SHA-256 `437c0939b81b81f1b05577b8324b926b69c59d331cbe927824ba8882d778e388`。
+- 独立恢复进程从 last 恢复到 epoch `1`，未新增训练 epoch 并完成有限 final test；进程退出后两张 GPU 均释放。completed manifest、35 项全目录 checksums、8 GiB 预算和输出边界 verify 通过；archive 仅 dry-run，目标不存在。
+- 脱敏 registry 已记录完成行；详细路径、日志、执行结果和资产缺口只保存在 Git 外运行目录与 `.local/asset_sources.yaml`。
+
+下一步：从更新后的 `main` 创建 `infra/clip-asset-source`，只读定位可靠的 CLIP ViT-L/14 预训练来源、大小和 SHA-256。未经明确批准不得下载或复制权重，不得启动完整训练。
 
 ### T4.4 完整训练
 
-**状态：BLOCKED by T4.3**
+**状态：BLOCKED by CLIP asset and formal-training approval**
 
 从 CLIP 初始化开始，不加载发布的 DFD-HR 权重。使用验证集选择 best，并维护可恢复 last。
+
+阻塞证据（2026-07-20）：默认 Hugging Face cache、当前用户共享 scratch 模型文件和现有本地资产记录中均未找到可离线加载并校验的 `openai/clip-vit-large-patch14` 预训练资产。官方 DFD-HR checkpoint 只允许校准与评估，不能替代独立训练初始化。
+
+下一步：只读确认可靠来源、大小和 SHA-256，并获得复制/下载资产及启动正式训练的明确批准。
 
 ### T4.5 跨数据集最终评估
 
