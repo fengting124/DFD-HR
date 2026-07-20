@@ -45,7 +45,7 @@ Current task branch: `docs/expanded-node-audit`
 
 Completed scope: T4.4 full reproduction resource preflight and expanded candidate comparison
 
-Next task branch: awaiting approval 1 for pinned CLIP asset transfer
+Next task branch: awaiting GPU reservation and approval for pretrained initialization smoke
 
 ## 3. 当前里程碑
 
@@ -601,11 +601,11 @@ checksums.sha256
 
 ### T4.4 完整训练
 
-**状态：BLOCKED by CLIP asset and formal-training approval**
+**状态：BLOCKED by GPU reservation, pretrained Smoke approval, and formal-training approval**
 
 从 CLIP 初始化开始，不加载发布的 DFD-HR 权重。使用验证集选择 best，并维护可恢复 last。
 
-资产来源审计：**DONE**。官方仓库 `openai/clip-vit-large-patch14` 的只读元数据审计固定到 revision `32bd64288804d66eefd0ccbe215aa642df71cc41`；首选 `model.safetensors` 大小 `1710540580` bytes，LFS SHA-256 `a2bf730a0c7debf160f7a6b50b3aaf3703e7e88ac73de7a314903141db026dcb`，配套 `config.json` 大小 `4519` bytes。精确来源记录在 Git 外 `.local/asset_sources.yaml`，本轮未下载文件。
+资产来源审计：**DONE**。官方仓库 `openai/clip-vit-large-patch14` 的只读元数据审计固定到 revision `32bd64288804d66eefd0ccbe215aa642df71cc41`；首选 `model.safetensors` 大小 `1710540580` bytes，LFS SHA-256 `a2bf730a0c7debf160f7a6b50b3aaf3703e7e88ac73de7a314903141db026dcb`，配套 `config.json` 大小 `4519` bytes。精确来源记录在 Git 外 `.local/asset_sources.yaml`；来源审计阶段未下载，后续获批落地结果见下文。
 
 阻塞证据（2026-07-20）：默认 Hugging Face cache、当前用户共享 scratch 模型文件和现有本地资产记录中均未找到可离线加载并校验的该预训练资产。官方 DFD-HR checkpoint 只允许校准与评估，不能替代独立训练初始化。
 
@@ -633,7 +633,16 @@ checksums.sha256
 - 提交：`3c10c94`（候选比较与脱敏报告更新）。
 - 本轮未安装软件、未复制数据或权重、未修改系统配置、未运行 benchmark、Smoke、Mini Run 或完整训练。
 
-下一步：在 controller node 与 `additional 3090 candidate C` 之间确认连续 GPU 预约；随后等待批准 1，在最终选定节点下载或复制 pinned CLIP snapshot。批准 1 只允许资产落地与 revision/size/SHA-256/必要文件校验，不包含节点环境准备、pretrained Smoke 或完整训练；后续批准 2、3、4 仍需分别取得。
+Pinned CLIP 资产落地：**DONE**。完成证据（2026-07-20）：
+
+- 经用户单独批准，固定 revision 的八个必要文件先下载到 `controller node`；默认 Xet 传输停滞且大文件保持 0 bytes 后，停止本次自有会话并保留失败证据，改用标准 HTTP/LFS 在同一节点完成，未并发或切换下载源。
+- `model.safetensors` 大小 `1710540580` bytes，SHA-256 `a2bf730a0c7debf160f7a6b50b3aaf3703e7e88ac73de7a314903141db026dcb`；processor 与 427,616,513 参数的完整 CLIP 模型在强制离线模式加载成功。
+- 资产通过 `tmux` 中的可恢复传输复制到 `additional 3090 candidate C`；目标端重新执行大小、SHA-256、必要文件和完全离线加载校验，结果一致。
+- 补充检查确认一个 2 × RTX 2080 Ti 候选采样时空闲、环境存在且空间充足；一个 4 × RTX 2080 Ti 候选环境和空间存在但四卡均满载。当前不向二者追加复制：controller node 本身已是可用的 2 卡 2080 Ti 回退，4 卡候选未满足 GPU 可用门槛。
+- Git 外证据：`.local/asset_sources.yaml`、`.local/asset_transfer_plan.yaml`、下载/复制日志和逐节点原始审计；公开记录保持匿名。
+- 未复制数据集、Conda 环境或官方 DFD-HR checkpoint；未安装软件、修改系统配置、运行 GPU benchmark、Smoke、Mini Run 或正式训练。
+
+下一步：优先协调 `additional 3090 candidate C` 的连续双卡预约；获得单独批准后，使用 pinned CLIP 和正式候选配置执行有限 pretrained initialization Smoke。若无法预约 3090，则在 controller node 的 2 × RTX 2080 Ti 上执行同一 Smoke；4 × RTX 2080 Ti 候选仅在四卡明确释放后重新评估。
 
 ### T4.5 跨数据集最终评估
 
