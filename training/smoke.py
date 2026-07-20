@@ -44,6 +44,7 @@ def parse_args():
 
 
 def gradient_category(parameter_name):
+    parameter_name = parameter_name.removeprefix('module.')
     for category, prefixes in GRADIENT_CATEGORIES.items():
         if parameter_name.startswith(prefixes):
             return category

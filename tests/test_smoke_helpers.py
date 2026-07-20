@@ -16,6 +16,7 @@ class SmokeHelperTests(unittest.TestCase):
         self.assertEqual(gradient_category('token_router.0.fc1.weight'), 'router')
         self.assertEqual(gradient_category('head.weight'), 'head')
         self.assertEqual(gradient_category('query_attn.in_proj_weight'), 'query')
+        self.assertEqual(gradient_category('module.head.weight'), 'head')
         self.assertEqual(gradient_category('unclassified.weight'), 'other')
 
     def test_output_boundary_rejects_protected_roots(self):
