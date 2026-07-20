@@ -364,7 +364,9 @@ checksums.sha256
 - `${DFDHR_PYTHON} -m jupyter --version` 和 kernelspec 查询均返回 `No module named jupyter`。
 - 按当前任务边界未安装软件，未使用系统 Python 替代，未注册 Kernel，未启动 Jupyter。
 
-提交：本分支的 Jupyter 能力检查与阻塞状态提交。
+提交：`b309729`（Jupyter 能力检查与阻塞状态）。
+
+验证：`${DFDHR_PYTHON} -m unittest discover -s tests -v`，9 tests OK；`git diff --check origin/main...HEAD` 通过。
 
 下一步：取得明确安装批准后，在既有 DFD-HR 环境中补齐 Jupyter/ipykernel，再重新执行 T3.1 全部验收；批准前不创建无法执行验证的 Notebook。
 
