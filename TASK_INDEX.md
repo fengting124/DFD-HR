@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `test/two-gpu-ddp-smoke`
+Current task branch: `feat/experiment-registry`
 
-Completed scope: T4.2 two-GPU NCCL 20-step smoke
+Completed scope: T1.1-T1.4 experiment lifecycle and registry infrastructure
 
-Next task branch: `feat/experiment-registry`
+Next task branch: `feat/structured-training-metrics`
 
 ## 3. 当前里程碑
 
@@ -244,41 +244,47 @@ DFD-HR 就绪性：
 
 ### T1.1 本地路径与环境变量
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] 建立并验证 `DFDHR_REPO_ROOT`、`DFDHR_PYTHON`、`DFDHR_DATA_ROOT`、`DFDHR_RUNTIME_ROOT`、`DFDHR_ARCHIVE_ROOT`、`DFDHR_CACHE_ROOT`。
-- [ ] 数据目录只读。
-- [ ] 训练输出不写入代码目录或共享数据目录。
-- [ ] 缓存不写入仓库。
+- [x] 建立并验证 `DFDHR_REPO_ROOT`、`DFDHR_PYTHON`、`DFDHR_DATA_ROOT`、`DFDHR_RUNTIME_ROOT`、`DFDHR_ARCHIVE_ROOT`、`DFDHR_CACHE_ROOT`。
+- [x] 数据目录只读。
+- [x] 训练输出不写入代码目录或共享数据目录。
+- [x] 缓存不写入仓库。
 
 已知前置问题：`00_environment_and_paths.ipynb` 的只读审计确认当前 detector YAML 使用仓库相对 `log_dir`/`logdir`，按仓库根解析时会把日志和 checkpoint 写入仓库。正式运行前必须由运行配置显式覆盖到 `${DFDHR_RUNTIME_ROOT}`；本次 Jupyter 任务未修改训练配置。
 
+完成证据（2026-07-20）：生命周期工具要求六个变量全部存在、解释器与 `${DFDHR_PYTHON}` 一致、repo 与 active Git root 一致；runtime/archive/cache 自动建立在 repo 和数据根之外。冻结配置把 `log_dir`/`logdir` 重定向到独立 RUN_ID，强制 `save_feat=false`、`save_ckpt=true`。集成验证未向数据根写入文件。
+
 ### T1.2 实验注册表
 
-**状态：TODO**
+**状态：DONE**
 
-- [ ] 建立 `registry/experiments.csv`。
-- [ ] 每个运行使用唯一 `RUN_ID`。
-- [ ] 记录状态、目标、分支、提交、配置、节点角色、GPU、结果和归档位置。
+- [x] 建立 `registry/experiments.csv`。
+- [x] 每个运行使用唯一 `RUN_ID`。
+- [x] 记录状态、目标、分支、提交、配置、节点角色、GPU、结果和归档位置。
+
+完成证据（2026-07-20）：RUN_ID 受格式、runtime、archive 和 registry 四重唯一性检查；registry schema 由测试锁定，写入前拒绝内部绝对路径、IP、SSH、token、password 和 private key 文本。真实 lifecycle-only 验证行绑定提交 `8cc2599`，公共路径仅使用 `${DFDHR_*}` 角色变量。
 
 ### T1.3 实验模板
 
-**状态：TODO**
+**状态：DONE**
 
 以下模板已经规划，但只有文件存在不代表流程已实现：
 
-- [ ] `templates/experiment_manifest.yaml`
-- [ ] `templates/experiment_summary.md`
-- [ ] `templates/infrastructure.local.example.yaml`
-- [ ] `templates/pull_request_template.md`
-- [ ] 运行目录初始化脚本
-- [ ] 配置冻结与哈希脚本
-- [ ] 环境与 Git 元数据采集脚本
-- [ ] 产物同步与哈希校验脚本
+- [x] `templates/experiment_manifest.yaml`
+- [x] `templates/experiment_summary.md`
+- [x] `templates/infrastructure.local.example.yaml`
+- [x] `templates/pull_request_template.md`
+- [x] 运行目录初始化脚本
+- [x] 配置冻结与哈希脚本
+- [x] 环境与 Git 元数据采集脚本
+- [x] 产物同步与哈希校验脚本
+
+完成证据（2026-07-20）：`scripts/experiment_lifecycle.py` 提供 init/freeze/capture/checksums/verify/register/archive 子命令，另有 6 个单一职责 shell 入口。manifest 递归拒绝 `REPLACE_ME`，环境采集使用白名单，配置和数据/权重记录 SHA-256。archive 默认 dry-run，`--execute` 才复制并逐文件比对哈希，且无删除源目录能力；本轮仅验证 dry-run，未复制归档。
 
 ### T1.4 运行目录与存储预算
 
-**状态：TODO**
+**状态：DONE**
 
 每个运行目录至少包含：
 
@@ -295,6 +301,21 @@ checksums.sha256
 ```
 
 默认只保留 `best` 和 `last` checkpoint，关闭特征转储；本地空间预算必须写入 manifest。
+
+完成证据（2026-07-20）：Git 外 lifecycle 验证 RUN_ID `_002` 成功执行 init、两次 verify、capture、freeze、checksums 和 archive dry-run；九个最小文件、`checkpoints/`、`notebooks_executed/`、command 可执行位、无 symlink、输出边界、预算和全文件 SHA-256 均通过。RUN_ID `_001` 因 PyTorch `TorchVersion` YAML 序列化失败而保留为失败编号，修复提交 `8cc2599` 后未复用。
+
+提交：`b3ab5d6`（生命周期工具）、`8cc2599`（runtime 版本序列化修复）。完整测试为 46 tests OK。
+
+### T1.5 结构化训练指标流
+
+**状态：TODO**
+
+- [ ] Trainer 将 train/validation 的 epoch、global step、loss、学习率、step/data time、显存和磁盘余量追加到 `${RUN_DIR}/metrics.jsonl`。
+- [ ] 多卡仅 rank 0 写入，记录 world size、micro-batch、累积步数和有效 batch。
+- [ ] 每行独立 JSON、原子追加边界明确，异常中断后已有行仍可解析。
+- [ ] `05_training_monitor.ipynb` 只读消费该文件和日志。
+
+下一步：从更新后的 `main` 创建 `feat/structured-training-metrics`；完成前不得启动 Mini Run。
 
 ## P2：训练与评估正确性阻塞项
 
@@ -557,7 +578,7 @@ checksums.sha256
 
 ### T4.3 Mini Run
 
-**状态：BLOCKED by P1**
+**状态：BLOCKED by T1.5**
 
 固定小子集，1–3 epoch。只验证训练闭环，不作为论文结果。
 

@@ -2,7 +2,7 @@
 
 本文件是 Codex 和项目成员进入仓库后的第一入口。详细执行流程见 `docs/EXPERIMENT_WORKFLOW.md`，当前任务和完成状态见 `TASK_INDEX.md`。
 
-> 当前事实：标准化实验模板、Jupyter Notebook、训练代码修复、Smoke Test 和正式复现大部分尚未完成。只有存在明确提交、测试或运行证据的项目才能标记为完成。
+> 当前事实：实验模板、Jupyter 00-04、训练正确性修复及单/双卡 Smoke 已有证据；Mini Run、完整训练、训练监控和归档实跑仍未完成。只有存在明确提交、测试或运行证据的项目才能标记为完成。
 
 ## 1. 新机器与新会话启动顺序
 
@@ -11,8 +11,9 @@
 ```bash
 git status --short --branch
 git fetch --all --prune
-git switch docs/experiment-workflow
-git pull --ff-only
+git switch main
+git pull --ff-only origin main
+git switch <当前任务分支>
 git log --oneline --decorate -12
 ```
 
