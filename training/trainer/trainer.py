@@ -15,6 +15,7 @@ import pickle
 import datetime
 import logging
 import numpy as np
+import random
 from contextlib import nullcontext
 from copy import deepcopy
 from collections import defaultdict
@@ -194,26 +195,77 @@ class Trainer(object):
             raise NotImplementedError(
                 "=> no model found at '{}'".format(model_path))
 
+    def resume_from_checkpoint(self, checkpoint_path):
+        saved = torch.load(checkpoint_path, map_location=self.device)
+        required_keys = {
+            'state_dict',
+            'optimizer',
+            'scheduler',
+            'scaler',
+            'epoch',
+            'best_metrics_all_time',
+            'rng_state',
+        }
+        if not isinstance(saved, dict) or not required_keys.issubset(saved):
+            raise ValueError('resume requires a full training checkpoint')
+        if saved['epoch'] is None:
+            raise ValueError('full training checkpoint is missing a completed epoch')
+
+        model_to_load = self.model.module if isinstance(self.model, DDP) else self.model
+        model_to_load.load_state_dict(saved['state_dict'], strict=True)
+        if self.optimizer is not None:
+            if saved['optimizer'] is None:
+                raise ValueError('full training checkpoint is missing optimizer state')
+            self.optimizer.load_state_dict(saved['optimizer'])
+        if self.scheduler is not None:
+            if saved['scheduler'] is None:
+                raise ValueError('full training checkpoint is missing scheduler state')
+            self.scheduler.load_state_dict(saved['scheduler'])
+        self.scaler.load_state_dict(saved['scaler'])
+
+        restored_best = defaultdict(
+            lambda: defaultdict(
+                lambda: float('-inf') if self.metric_scoring != 'eer' else float('inf')
+            )
+        )
+        for key, value in saved['best_metrics_all_time'].items():
+            restored_best[key] = dict(value)
+        self.best_metrics_all_time = restored_best
+
+        rng_state = saved['rng_state']
+        required_rng_keys = {'python', 'numpy', 'torch', 'cuda'}
+        if not isinstance(rng_state, dict) or not required_rng_keys.issubset(rng_state):
+            raise ValueError('full training checkpoint is missing RNG state')
+        random.setstate(rng_state['python'])
+        np.random.set_state(rng_state['numpy'])
+        torch.set_rng_state(rng_state['torch'])
+        if torch.cuda.is_available() and rng_state['cuda'] is not None:
+            torch.cuda.set_rng_state_all(rng_state['cuda'])
+
+        next_epoch = int(saved['epoch']) + 1
+        self.config['start_epoch'] = next_epoch
+        self.logger.info('Resumed full training checkpoint from %s at epoch %s', checkpoint_path, next_epoch)
+        return next_epoch
+
     def _plain_best_metrics(self):
         return {
             key: dict(value) if isinstance(value, defaultdict) else value
             for key, value in self.best_metrics_all_time.items()
         }
 
-    def save_ckpt(self, phase, dataset_key, ckpt_info=None, epoch=None):
-        save_dir = os.path.join(self.log_dir, phase, dataset_key)
-        os.makedirs(save_dir, exist_ok=True)
-        ckpt_name = f"ckpt_best.pth"
-        save_path = os.path.join(save_dir, ckpt_name)
+    def _checkpoint_state(self, epoch):
         model_to_save = self.model.module if isinstance(self.model, DDP) else self.model
         checkpoint = {
             'state_dict': model_to_save.state_dict(),
             'optimizer': self.optimizer.state_dict() if self.optimizer is not None else None,
             'scheduler': self.scheduler.state_dict() if self.scheduler is not None else None,
+            'scaler': self.scaler.state_dict(),
             'epoch': epoch,
             'best_metrics_all_time': self._plain_best_metrics(),
             'config': self.config,
             'rng_state': {
+                'python': random.getstate(),
+                'numpy': np.random.get_state(),
                 'torch': torch.get_rng_state(),
                 'cuda': torch.cuda.get_rng_state_all() if torch.cuda.is_available() else None,
             },
@@ -221,8 +273,36 @@ class Trainer(object):
         if 'svdd' in self.config['model_name']:
             checkpoint['R'] = self.model.R
             checkpoint['c'] = self.model.c
-        torch.save(checkpoint, save_path)
+        return checkpoint
+
+    @staticmethod
+    def _atomic_torch_save(checkpoint, save_path):
+        temporary_path = save_path + '.tmp'
+        try:
+            torch.save(checkpoint, temporary_path)
+            os.replace(temporary_path, save_path)
+        finally:
+            if os.path.exists(temporary_path):
+                os.remove(temporary_path)
+
+    def save_ckpt(self, phase, dataset_key, ckpt_info=None, epoch=None, checkpoint_name='best'):
+        save_dir = os.path.join(self.log_dir, phase, dataset_key)
+        os.makedirs(save_dir, exist_ok=True)
+        if checkpoint_name not in {'best', 'last'}:
+            raise ValueError("checkpoint_name must be 'best' or 'last'")
+        ckpt_name = f"ckpt_{checkpoint_name}.pth"
+        save_path = os.path.join(save_dir, ckpt_name)
+        self._atomic_torch_save(self._checkpoint_state(epoch), save_path)
         self.logger.info(f"Checkpoint saved to {save_path}, current ckpt is {ckpt_info}")
+        return save_path
+
+    def save_last_ckpt(self, epoch):
+        save_dir = os.path.join(self.log_dir, 'checkpoints')
+        os.makedirs(save_dir, exist_ok=True)
+        save_path = os.path.join(save_dir, 'ckpt_last.pth')
+        self._atomic_torch_save(self._checkpoint_state(epoch), save_path)
+        self.logger.info('Last checkpoint saved to %s', save_path)
+        return save_path
 
     def save_swa_ckpt(self):
         save_dir = self.log_dir
@@ -526,7 +606,7 @@ class Trainer(object):
             if key == 'avg':
                 self.best_metrics_all_time[key]['dataset_dict'] = metric_one_dataset['dataset_dict']
             # Save checkpoint, feature, and metrics if specified in config
-            if self.config['save_ckpt'] and key not in FFpp_pool:
+            if self.config['save_ckpt'] and key == 'avg':
                 self.save_ckpt(phase, key, f"{epoch}+{iteration}", epoch=epoch)
             self.save_metrics(phase, metric_one_dataset, key)
         if losses_one_dataset_recorder is not None:

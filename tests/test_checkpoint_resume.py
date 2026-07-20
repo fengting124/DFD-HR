@@ -58,6 +58,8 @@ class CheckpointResumeTests(unittest.TestCase):
             random.seed(11)
             np.random.seed(12)
             torch.manual_seed(13)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(14)
 
             loss = trainer.model(torch.ones(1, 2)).sum()
             loss.backward()
@@ -77,6 +79,9 @@ class CheckpointResumeTests(unittest.TestCase):
             expected_random = random.random()
             expected_numpy = np.random.random()
             expected_torch = torch.rand(1)
+            expected_cuda = (
+                torch.rand(1, device="cuda") if torch.cuda.is_available() else None
+            )
 
             with torch.no_grad():
                 for parameter in trainer.model.parameters():
@@ -88,19 +93,37 @@ class CheckpointResumeTests(unittest.TestCase):
             random.seed(101)
             np.random.seed(102)
             torch.manual_seed(103)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(104)
 
             next_epoch = trainer.resume_from_checkpoint(last_path)
 
             self.assertEqual(next_epoch, 4)
             for key, value in expected_model.items():
                 self.assertTrue(torch.equal(trainer.model.state_dict()[key], value))
-            self.assertEqual(trainer.optimizer.state_dict(), expected_optimizer)
+            restored_optimizer = trainer.optimizer.state_dict()
+            self.assertEqual(
+                restored_optimizer["param_groups"], expected_optimizer["param_groups"]
+            )
+            self.assertEqual(
+                set(restored_optimizer["state"]), set(expected_optimizer["state"])
+            )
+            for parameter_id, expected_state in expected_optimizer["state"].items():
+                restored_state = restored_optimizer["state"][parameter_id]
+                self.assertEqual(set(restored_state), set(expected_state))
+                for key, value in expected_state.items():
+                    if isinstance(value, torch.Tensor):
+                        self.assertTrue(torch.equal(restored_state[key], value))
+                    else:
+                        self.assertEqual(restored_state[key], value)
             self.assertEqual(trainer.scheduler.state_dict(), expected_scheduler)
             self.assertEqual(trainer.scaler.scale, 128.0)
             self.assertEqual(trainer._plain_best_metrics(), expected_best)
             self.assertEqual(random.random(), expected_random)
             self.assertEqual(np.random.random(), expected_numpy)
             self.assertTrue(torch.equal(torch.rand(1), expected_torch))
+            if expected_cuda is not None:
+                self.assertTrue(torch.equal(torch.rand(1, device="cuda"), expected_cuda))
 
             checkpoint_files = sorted(Path(temp_dir).rglob("*.pth"))
             self.assertEqual(checkpoint_files, sorted([Path(best_path), Path(last_path)]))
