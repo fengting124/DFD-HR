@@ -347,7 +347,7 @@ def initialize_run(args):
     manifest['runtime'].update({
         'node_role': args.node_role,
         'python_executable': str(paths['DFDHR_PYTHON']),
-        'torch_version': torch.__version__,
+        'torch_version': str(torch.__version__),
         'cuda_version': torch.version.cuda,
         'gpu_model': (
             torch.cuda.get_device_name(0) if torch.cuda.is_available() else None

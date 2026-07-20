@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 import yaml
+import torch
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -42,6 +43,9 @@ class ExperimentLifecycleTests(unittest.TestCase):
         assert_resolved({'value': ['ready', None]})
         with self.assertRaisesRegex(ValueError, 'manifest.value'):
             assert_resolved({'value': 'REPLACE_ME'})
+        self.assertEqual(yaml.safe_load(yaml.safe_dump({'torch': str(torch.__version__)})), {
+            'torch': str(torch.__version__),
+        })
 
     def test_config_freeze_merges_base_and_redirects_outputs(self):
         with tempfile.TemporaryDirectory() as temp_dir:
