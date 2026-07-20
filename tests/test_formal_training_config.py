@@ -91,6 +91,7 @@ class FormalTrainingConfigTests(unittest.TestCase):
             self.assertFalse(config['cudnn_benchmark'])
             self.assertTrue(config['cudnn_deterministic'])
             self.assertTrue(config['deterministic_algorithms'])
+            self.assertEqual(config['cublas_workspace_config'], ':4096:8')
             self.assertEqual(config['manualSeed'], 1024)
             self.assertEqual(config['initialization_mode'], 'pinned_clip_pretrained')
             self.assertTrue(config['backbone_local_files_only'])

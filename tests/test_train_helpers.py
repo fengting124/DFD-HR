@@ -40,6 +40,27 @@ class TrainHelpersTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'LOCAL_RANK'):
             train.resolve_local_rank(None, {'LOCAL_RANK': 'invalid'})
 
+    def test_deterministic_mode_configures_cublas_workspace(self):
+        environment = {}
+
+        value = train.configure_cublas_workspace(
+            {
+                'reproducibility_mode': 'deterministic',
+                'cublas_workspace_config': ':4096:8',
+            },
+            environment,
+        )
+
+        self.assertEqual(value, ':4096:8')
+        self.assertEqual(environment['CUBLAS_WORKSPACE_CONFIG'], ':4096:8')
+
+    def test_deterministic_mode_rejects_conflicting_cublas_workspace(self):
+        with self.assertRaisesRegex(ValueError, 'conflicts'):
+            train.configure_cublas_workspace(
+                {'reproducibility_mode': 'deterministic'},
+                {'CUBLAS_WORKSPACE_CONFIG': ':16:8'},
+            )
+
     def test_resolve_eval_loader_names_prefers_validation_over_test(self):
         config = {
             "validation_dataset": ["Celeb-DF-v2"],

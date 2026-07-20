@@ -69,6 +69,20 @@ def resolve_local_rank(cli_local_rank, environment=None):
     return local_rank
 
 
+def configure_cublas_workspace(config, environment=None):
+    if config.get('reproducibility_mode', 'seeded_best_effort') != 'deterministic':
+        return None
+    environment = os.environ if environment is None else environment
+    workspace_config = config.get('cublas_workspace_config', ':4096:8')
+    if workspace_config not in {':4096:8', ':16:8'}:
+        raise ValueError('cublas_workspace_config must be :4096:8 or :16:8')
+    existing = environment.get('CUBLAS_WORKSPACE_CONFIG')
+    if existing is not None and existing != workspace_config:
+        raise ValueError('CUBLAS_WORKSPACE_CONFIG conflicts with the deterministic config')
+    environment['CUBLAS_WORKSPACE_CONFIG'] = workspace_config
+    return workspace_config
+
+
 def resolve_runtime_device(ddp, local_rank, cuda_enabled):
     if cuda_enabled and torch.cuda.is_available():
         if ddp:
@@ -325,6 +339,7 @@ def main():
         config['test_dataset'] = args.test_dataset
     config['save_ckpt'] = args.save_ckpt
     config['save_feat'] = args.save_feat
+    configure_cublas_workspace(config)
     config['device'] = str(resolve_runtime_device(args.ddp, local_rank, config['cuda']))
     if config['lmdb']:
         config['dataset_json_folder'] = 'preprocessing/dataset_json_v3'

@@ -66,6 +66,7 @@ def build_formal_config(
         'cudnn_benchmark': False,
         'cudnn_deterministic': True,
         'deterministic_algorithms': True,
+        'cublas_workspace_config': ':4096:8',
         'dry_run': False,
     })
     config['optimizer']['type'] = 'adam'

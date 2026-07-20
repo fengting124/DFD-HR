@@ -71,6 +71,7 @@ reproducibility:
   cudnn_benchmark: false
   cudnn_deterministic: true
   deterministic_algorithms: true
+  cublas_workspace_config: ':4096:8'
 
 version:
   git_branch: REPLACE_ME
