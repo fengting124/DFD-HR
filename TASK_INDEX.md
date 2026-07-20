@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `infra/clip-asset-source`
+Current task branch: `infra/full-reproduction-preflight`
 
-Completed scope: T4.4 official CLIP asset source metadata audit
+Completed scope: T4.4 full reproduction resource preflight and node selection
 
-Next task branch: awaiting explicit asset-transfer approval
+Next task branch: awaiting approval 1 for pinned CLIP asset transfer
 
 ## 3. 当前里程碑
 
@@ -597,7 +597,7 @@ checksums.sha256
 - 独立恢复进程从 last 恢复到 epoch `1`，未新增训练 epoch 并完成有限 final test；进程退出后两张 GPU 均释放。completed manifest、35 项全目录 checksums、8 GiB 预算和输出边界 verify 通过；archive 仅 dry-run，目标不存在。
 - 脱敏 registry 已记录完成行；详细路径、日志、执行结果和资产缺口只保存在 Git 外运行目录与 `.local/asset_sources.yaml`。
 
-下一步：从更新后的 `main` 创建 `infra/clip-asset-source`，只读定位可靠的 CLIP ViT-L/14 预训练来源、大小和 SHA-256。未经明确批准不得下载或复制权重，不得启动完整训练。
+下一步：T4.3 已完成；按 T4.4 的独立批准边界推进完整复现资源准备，不得直接启动完整训练。
 
 ### T4.4 完整训练
 
@@ -609,7 +609,21 @@ checksums.sha256
 
 阻塞证据（2026-07-20）：默认 Hugging Face cache、当前用户共享 scratch 模型文件和现有本地资产记录中均未找到可离线加载并校验的该预训练资产。官方 DFD-HR checkpoint 只允许校准与评估，不能替代独立训练初始化。
 
-下一步：等待复制或下载 pinned 官方 snapshot 的明确批准；获批后只准备资产并校验 SHA-256，仍需另行批准才能启动正式训练。
+完整复现资源 Preflight：**DONE**。完成证据（2026-07-20）：
+
+- 对 `controller node`、`3090 candidate A`、`3090 candidate B` 和 `evaluation node` 分别完成新鲜有限检查；远程节点使用有限超时、非交互 SSH，每个角色独立记录。未读取进程明细或其他用户信息。
+- 四个角色均可达、共享仓库可见、提交一致且干净；四处均未发现 pinned CLIP。相同的 30 个 FF++ c23 train/validation/test 样本路径在四处全部存在，说明 3090 节点不需要复制 FF++ 数据本体。
+- `controller node`：2 × RTX 2080 Ti，采样时空闲；FF++ JSON SHA-256、`2156/420/420` 视频计数、split 两两互斥和有限路径均通过；环境完整，56 tests OK；约 983 GiB 可用。结论 `READY_AFTER_SMALL_ASSET_FIX`，仅缺 pinned CLIP，是当前首选训练与评估角色。
+- `3090 candidate A`：2 × RTX 3090，存储约 2.48 TiB 可用，但采样时两卡有负载；环境和节点本地 JSON 缺失。结论 `BLOCKED_BY_GPU / ENVIRONMENT / CLIP`；在 GPU 可预约、环境重建、JSON 与 CLIP 就绪并通过获批吞吐 Smoke 后，可切换为速度优先节点。
+- `3090 candidate B`：2 × RTX 3090 显存被占用，scratch 使用率 90%，环境和 JSON 缺失。结论 `NOT_RECOMMENDED`。
+- `evaluation node`：2 × RTX 3090 采样时空闲，FF++ JSON/路径与 56 tests 通过，但缺 `ipykernel`、CLIP，scratch 使用率 98%。结论 `BLOCKED_BY_STORAGE`，不承担新训练或归档任务。
+- 实测完整 checkpoint `2465259076` bytes；`3 × checkpoint + 10 GiB` 为 `18133195468` bytes（约 16.89 GiB）。计入日志后 manifest 硬下限取 20 GiB，建议维持 30 GiB；启动前仍要求至少 50 GiB 普通用户可用空间。
+- 首选方案只移动 pinned CLIP snapshot；不移动数据、JSON、环境、外部评估数据或官方 DFD-HR checkpoint。若改选 3090 A，额外只准备约 11.5 MB FF++ JSON，并从 pinned requirements 重新创建约 5.9 GiB 安装规模的环境；禁止把 Conda 前缀直接 rsync 后视为可靠。
+- 训练后保留 producing node 的 best/last 和完整元数据；另行获批后才把冻结 best 与 checksums 复制到 `controller node` 评估。长期 `archive candidate` 尚未专项审计，校验前不得删除源副本。
+- Git 外证据：`.local/full_reproduction_preflight.yaml`、`.local/node_inventory_latest.json`、`.local/asset_transfer_plan.yaml` 及受控 raw audit 目录；均保持未跟踪。公开脱敏报告为 `docs/full_reproduction_preflight_public.md`，提交 `0497dab`。
+- 完整测试为 56 tests OK；本轮未安装软件、未下载或复制资产、未修改系统配置、未运行 GPU benchmark、未启动 Mini Run 或完整训练。
+
+下一步：等待批准 1（在首选节点下载或复制 pinned CLIP snapshot）。批准 1 只允许资产落地与 revision/size/SHA-256/必要文件校验，不包含节点环境准备、pretrained Smoke 或完整训练；后续批准 2、3、4 仍需分别取得。
 
 ### T4.5 跨数据集最终评估
 
