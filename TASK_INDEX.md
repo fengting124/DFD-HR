@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `test/dataset-protocol-audit`
+Current task branch: `test/single-gpu-smoke`
 
-Completed scope: T3.2 dataset protocol audit notebook
+Completed scope: T4.1 single-GPU two-batch smoke and its standard notebook
 
-Next task branch: `test/single-gpu-smoke`
+Next task branch: `test/two-gpu-ddp-smoke`
 
 ## 3. 当前里程碑
 
@@ -469,7 +469,7 @@ checksums.sha256
 - [x] `00_environment_and_paths.ipynb`
 - [x] `01_checkpoint_strict_load.ipynb`
 - [x] `02_dataset_protocol_audit.ipynb`
-- [ ] `03_single_gpu_memory_smoke.ipynb`
+- [x] `03_single_gpu_memory_smoke.ipynb`
 - [x] `04_official_weight_eval.ipynb`
 - [ ] `05_training_monitor.ipynb`
 
@@ -506,19 +506,35 @@ checksums.sha256
 - FaceForensics++ JSON SHA-256 为 `0f05209e5d9dfbb86038887d7a1bb5a1977d1fa70312b921bacd7f43604b7c3f`；Notebook 未遍历数据目录树、未解码图像、未修改数据或启动训练。
 - 提交：`ca3ced1`。
 
-下一步：从更新后的 `main` 创建 `test/single-gpu-smoke`，完成 T4.1 和 `03_single_gpu_memory_smoke.ipynb`。
+后续进展：T4.1 和 `03_single_gpu_memory_smoke.ipynb` 已完成。
+
+`03_single_gpu_memory_smoke.ipynb` 完成证据（2026-07-20）：
+
+- 源 Notebook 为无输出、无执行计数、nbformat 4.5 有效文件，kernelspec 为 `dfd-hr`，不包含真实节点或内部绝对路径。
+- 在干净提交 `c5595ab` 上使用真实 `dfd-hr` Kernel 执行通过：3 个代码单元全部完成，0 error；FP32 与 AMP 分别在独立进程中执行严格两批次 Smoke。
+- 两种精度均使用 FaceForensics++ 两个类别平衡的真实样本、micro-batch 1、448 分辨率、关闭数据增强；未进入 epoch 训练循环。
+- FP32 loss 为 `0.2698855996`、`0.7747207284`，step time 为 `2.0834s`、`1.5513s`；峰值 allocated/reserved 为 `6792459264`/`7321157632` bytes。
+- AMP loss 为 `0.2712574303`、`0.7789944410`，step time 为 `1.7743s`、`1.4726s`；峰值 allocated/reserved 为 `6059573760`/`6295650304` bytes，GradScaler scale 在两批后保持 `1024`。
+- 两种精度的第二批未缩放 Adapter、Router、Head、Query 梯度均存在且有限，optimizer 参数确实更新；392 个冻结 backbone/visual-projection 参数保持无梯度。
+- FP32/AMP 分别原子保存 `2465258500`/`2465258692` bytes 的完整 checkpoint，临时文件清理、模型扰动后恢复、optimizer/Scaler/RNG 恢复和 next epoch `1` 均通过；报告和 checkpoint 仅保存在 `${DFDHR_RUNTIME_ROOT}/jupyter-validation/`。
+- 真实 Smoke 发现并修复两项此前微型测试未覆盖的问题：CUDA resume 将 CPU RNG state 错映射到 GPU，以及 MoE autocast gate/expert dtype 不一致；新增 CPU staging、AMP initial scale、未缩放梯度 observer 与真实 CUDA MoE backward 测试。
+- 完整测试为 37 tests OK；提交：`c5595ab`。
+
+下一步：合并后从更新的 `main` 创建 `test/two-gpu-ddp-smoke`，完成 T4.2 的有限双卡 NCCL Smoke；不进入 Mini Run。
 
 ## P4：Smoke Test 与正式复现
 
 ### T4.1 单卡两批次 Smoke Test
 
-**状态：TODO**
+**状态：DONE**
 
 从 micro-batch 1 开始，分别记录 FP32 和 AMP 峰值显存、step time、有限 loss、可训练模块梯度、冻结 backbone 无梯度、checkpoint round trip。
 
+完成证据：见 T3.2 的 `03_single_gpu_memory_smoke.ipynb` 记录；代码提交 `c5595ab`，Git 外结构化报告绑定同一干净提交。
+
 ### T4.2 两卡 DDP Smoke Test
 
-**状态：BLOCKED by T4.1**
+**状态：TODO**
 
 有限步数验证同步、日志、有效 batch、checkpoint、正常退出和恢复。
 
