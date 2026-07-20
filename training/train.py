@@ -32,6 +32,7 @@ from optimizor.LinearLR import LinearDecayLR
 from trainer.trainer import Trainer
 from detectors import DETECTOR
 from metrics.utils import parse_metric_for_print
+from evaluation_utils import select_fixed_subset
 from logger import create_logger, RankFilter
 
 from dataset.abstract_dataset import DeepfakeAbstractBaseDataset
@@ -76,6 +77,26 @@ def resolve_eval_loader_names(config):
     return validation_dataset
 
 
+def load_training_config(detector_path, base_config_path='./training/config/train_config.yaml'):
+    with open(base_config_path, encoding='utf-8') as file:
+        config = yaml.safe_load(file) or {}
+    with open(detector_path, encoding='utf-8') as file:
+        config.update(yaml.safe_load(file) or {})
+    return config
+
+
+def apply_fixed_subset(dataset, max_samples, role):
+    if max_samples is None:
+        return len(dataset)
+    selected = select_fixed_subset(dataset, max_samples)
+    labels = {int(label) for label in dataset.label_list}
+    if selected != max_samples:
+        raise ValueError(f'{role} fixed subset requested {max_samples} samples but found {selected}.')
+    if labels != {0, 1}:
+        raise ValueError(f'{role} fixed subset must contain both binary classes.')
+    return selected
+
+
 def init_seed(config):
     if config['manualSeed'] is None:
         config['manualSeed'] = random.randint(1, 10000)
@@ -91,6 +112,7 @@ def prepare_training_data(config):
                 config=config,
                 mode='train',
             )
+    apply_fixed_subset(train_set, config.get('train_max_samples'), 'train')
 
     if config['ddp']:
         sampler = DistributedSampler(train_set)
@@ -126,6 +148,8 @@ def prepare_eval_data(config, mode, dataset_names):
                     config=config,
                     mode=mode,
             )
+        limit_key = 'validation_max_samples' if mode == 'val' else 'test_max_samples'
+        apply_fixed_subset(test_set, config.get(limit_key), mode)
 
         test_data_loader = \
             torch.utils.data.DataLoader(
@@ -214,11 +238,7 @@ def choose_metric(config):
 def main():
     args = parse_args()
     # parse options and load config
-    with open(args.detector_path, 'r') as f:
-        config = yaml.safe_load(f)
-    with open('./training/config/train_config.yaml', 'r') as f:
-        config2 = yaml.safe_load(f)
-    config.update(config2)
+    config = load_training_config(args.detector_path)
     config['local_rank']=args.local_rank
     if config['dry_run']:
         config['nEpochs'] = 0
@@ -291,7 +311,18 @@ def main():
     metric_scoring = choose_metric(config)
 
     # prepare the trainer
-    trainer = Trainer(config, model, optimizer, scheduler, logger, metric_scoring)
+    trainer_kwargs = {}
+    if config.get('run_id'):
+        trainer_kwargs['time_now'] = config['run_id']
+    trainer = Trainer(
+        config,
+        model,
+        optimizer,
+        scheduler,
+        logger,
+        metric_scoring,
+        **trainer_kwargs,
+    )
     if args.resume:
         config['start_epoch'] = trainer.resume_from_checkpoint(args.resume)
 

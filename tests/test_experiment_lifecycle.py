@@ -53,13 +53,14 @@ class ExperimentLifecycleTests(unittest.TestCase):
             detector = root / 'detector.yaml'
             base = root / 'base.yaml'
             destination = root / 'run/config.resolved.yaml'
-            detector.write_text('model_name: dfd_hr\nsave_feat: true\n', encoding='utf-8')
-            base.write_text('label_dict:\n  real: 0\n', encoding='utf-8')
+            detector.write_text('model_name: dfd_hr\nsave_feat: true\nworkers: 0\n', encoding='utf-8')
+            base.write_text('label_dict:\n  real: 0\nworkers: 8\n', encoding='utf-8')
 
             config, digest = freeze_config(detector, base, destination, root / 'run')
 
             self.assertEqual(len(digest), 64)
             self.assertEqual(config['label_dict'], {'real': 0})
+            self.assertEqual(config['workers'], 0)
             self.assertFalse(config['save_feat'])
             self.assertTrue(config['save_ckpt'])
             self.assertEqual(config['run_id'], 'run')

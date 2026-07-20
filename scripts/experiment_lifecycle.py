@@ -152,11 +152,10 @@ def sha256_file(path):
 
 
 def freeze_config(source_path, base_config_path, destination_path, run_dir):
-    with open(source_path, encoding='utf-8') as file:
-        config = yaml.safe_load(file) or {}
     with open(base_config_path, encoding='utf-8') as file:
-        base_config = yaml.safe_load(file) or {}
-    config.update(base_config)
+        config = yaml.safe_load(file) or {}
+    with open(source_path, encoding='utf-8') as file:
+        config.update(yaml.safe_load(file) or {})
     run_dir = Path(run_dir).resolve()
     output_dir = run_dir / 'training'
     config.update({
@@ -369,6 +368,7 @@ def initialize_run(args):
         'ddp_smoke_passed': args.ddp_smoke_passed,
     })
     manifest['initialization'].update({
+        'clip_pretrained': bool(config.get('backbone_pretrained', True)),
         'dfd_hr_checkpoint': str(Path(args.initial_weight).resolve()) if args.initial_weight else None,
         'independent_reproduction': not bool(args.initial_weight),
     })

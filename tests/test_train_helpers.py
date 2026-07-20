@@ -1,6 +1,8 @@
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import torch
@@ -56,6 +58,37 @@ class TrainHelpersTests(unittest.TestCase):
             args = train.parse_args()
 
         self.assertEqual(args.resume, "last.pth")
+
+    def test_training_config_prefers_experiment_values_over_base_defaults(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            detector = root / 'detector.yaml'
+            base = root / 'base.yaml'
+            detector.write_text('workers: 0\nnEpochs: 1\n', encoding='utf-8')
+            base.write_text('workers: 8\ndry_run: false\n', encoding='utf-8')
+
+            config = train.load_training_config(detector, base)
+
+            self.assertEqual(config['workers'], 0)
+            self.assertEqual(config['nEpochs'], 1)
+            self.assertFalse(config['dry_run'])
+
+    def test_fixed_subset_is_exact_balanced_and_deterministic(self):
+        dataset = SimpleNamespace(
+            image_list=['z1', 'a1', 'z0', 'a0', 'm1', 'm0'],
+            label_list=[1, 1, 0, 0, 1, 0],
+            data_dict={
+                'image': ['z1', 'a1', 'z0', 'a0', 'm1', 'm0'],
+                'label': [1, 1, 0, 0, 1, 0],
+                'video_id': ['z1', 'a1', 'z0', 'a0', 'm1', 'm0'],
+            },
+        )
+
+        selected = train.apply_fixed_subset(dataset, 4, 'train')
+
+        self.assertEqual(selected, 4)
+        self.assertEqual(dataset.image_list, ['a0', 'a1', 'm0', 'm1'])
+        self.assertEqual(dataset.label_list, [0, 1, 0, 1])
 
 
 if __name__ == "__main__":
