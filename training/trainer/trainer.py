@@ -138,6 +138,31 @@ class Trainer(object):
                 raise FloatingPointError('Non-finite gradient detected')
         return True
 
+    def _run_rank_zero_synchronized(self, operation):
+        distributed = (
+            self.config.get('ddp', False)
+            and dist.is_available()
+            and dist.is_initialized()
+        )
+        if not distributed:
+            return operation()
+
+        dist.barrier()
+        payload = [None]
+        if dist.get_rank() == 0:
+            try:
+                payload[0] = {'ok': True, 'value': operation()}
+            except Exception as error:
+                payload[0] = {
+                    'ok': False,
+                    'error': f'{type(error).__name__}: {error}',
+                }
+        dist.broadcast_object_list(payload, src=0)
+        dist.barrier()
+        if not payload[0]['ok']:
+            raise RuntimeError(f"Rank-0 operation failed: {payload[0]['error']}")
+        return payload[0]['value']
+
     def get_writer(self, phase, dataset_key, metric_key):
         writer_key = f"{phase}-{dataset_key}-{metric_key}"
         if writer_key not in self.writers:
@@ -531,24 +556,18 @@ class Trainer(object):
 
             # run test
             if (step_cnt+1) % test_step == 0:
-                if eval_data_loaders is not None and (not self.config['ddp'] ):
-                    self.logger.info(f"===> {eval_phase.capitalize()} start!")
-                    test_best_metric = self.test_epoch(
-                        epoch,
-                        iteration,
-                        eval_data_loaders,
-                        step_cnt,
-                        phase=eval_phase,
-                    )
-                elif eval_data_loaders is not None and (self.config['ddp'] and dist.get_rank() == 0):
-                    self.logger.info(f"===> {eval_phase.capitalize()} start!")
-                    test_best_metric = self.test_epoch(
-                        epoch,
-                        iteration,
-                        eval_data_loaders,
-                        step_cnt,
-                        phase=eval_phase,
-                    )
+                if eval_data_loaders is not None:
+                    def run_validation():
+                        self.logger.info(f"===> {eval_phase.capitalize()} start!")
+                        return self.test_epoch(
+                            epoch,
+                            iteration,
+                            eval_data_loaders,
+                            step_cnt,
+                            phase=eval_phase,
+                        )
+
+                    test_best_metric = self._run_rank_zero_synchronized(run_validation)
                 else:
                     test_best_metric = None
 
@@ -690,9 +709,10 @@ class Trainer(object):
         if not save_best:
             self.save_metric_report(phase, metrics_all_datasets)
             return metrics_all_datasets
-        return self.best_metrics_all_time  # return all types of mean metrics for determining the best ckpt
+        return self._plain_best_metrics()  # return all types of mean metrics for determining the best ckpt
 
     @torch.no_grad()
     def inference(self, data_dict):
-        predictions = self.model(data_dict, inference=True)
+        model = self.model.module if isinstance(self.model, DDP) else self.model
+        predictions = model(data_dict, inference=True)
         return predictions

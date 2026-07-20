@@ -311,22 +311,32 @@ def main():
             scheduler.step()
         if best_metric is not None:
             logger.info(f"===> Epoch[{epoch}] end with validation {metric_scoring}: {parse_metric_for_print(best_metric)}!")
-        if config['save_ckpt'] and (not config['ddp'] or dist.get_rank() == 0):
-            trainer.save_last_ckpt(epoch)
+        if config['save_ckpt']:
+            trainer._run_rank_zero_synchronized(
+                lambda: trainer.save_last_ckpt(epoch)
+            )
     logger.info("Stop Training on best validation metric {}".format(parse_metric_for_print(best_metric)))
 
-    best_validation_ckpt = os.path.join(trainer.log_dir, 'val', 'avg', 'ckpt_best.pth')
-    if validation_data_loaders is not None and test_data_loaders is not None and os.path.isfile(best_validation_ckpt):
-        trainer.load_ckpt(best_validation_ckpt)
-        final_test_metrics = trainer.test_epoch(
-            epoch=config['nEpochs'],
-            iteration=0,
-            test_data_loaders=test_data_loaders,
-            step=config['nEpochs'] * max(len(train_data_loader), 1),
-            phase='test',
-            save_best=False,
-        )
-        logger.info("Final test metrics after validation-selected training: {}".format(parse_metric_for_print(final_test_metrics)))
+    if validation_data_loaders is not None and test_data_loaders is not None:
+        def run_final_test():
+            best_validation_ckpt = os.path.join(
+                trainer.log_dir, 'val', 'avg', 'ckpt_best.pth'
+            )
+            if not os.path.isfile(best_validation_ckpt):
+                return None
+            trainer.load_ckpt(best_validation_ckpt)
+            return trainer.test_epoch(
+                epoch=config['nEpochs'],
+                iteration=0,
+                test_data_loaders=test_data_loaders,
+                step=config['nEpochs'] * max(len(train_data_loader), 1),
+                phase='test',
+                save_best=False,
+            )
+
+        final_test_metrics = trainer._run_rank_zero_synchronized(run_final_test)
+        if final_test_metrics is not None:
+            logger.info("Final test metrics after validation-selected training: {}".format(parse_metric_for_print(final_test_metrics)))
 
     # close the tensorboard writers
     for writer in trainer.writers.values():

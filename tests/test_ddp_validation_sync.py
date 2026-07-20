@@ -9,6 +9,7 @@ from unittest.mock import Mock
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,16 @@ if str(TRAINING_ROOT) not in sys.path:
     sys.path.insert(0, str(TRAINING_ROOT))
 
 from trainer.trainer import Trainer
+
+
+class TinyInferenceModel(torch.nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear = torch.nn.Linear(1, 1, bias=False)
+        torch.nn.init.constant_(self.linear.weight, 0.875)
+
+    def forward(self, data_dict, inference=False):
+        return {"prob": self.linear(data_dict["x"])}
 
 
 def ddp_sync_worker(rank, world_size, rendezvous_path, output_dir):
@@ -31,12 +42,15 @@ def ddp_sync_worker(rank, world_size, rendezvous_path, output_dir):
         trainer = Trainer.__new__(Trainer)
         trainer.config = {"ddp": True}
         trainer.logger = Mock()
+        trainer.model = DDP(TinyInferenceModel())
+        trainer.train = False
 
         def rank_zero_validation():
+            predictions = trainer.inference({"x": torch.ones(1, 1)})
             (Path(output_dir) / "rank-zero-validation.txt").write_text(
                 "called", encoding="utf-8"
             )
-            return {"avg": {"auc": 0.875}}
+            return {"avg": {"auc": predictions["prob"].item()}}
 
         result = trainer._run_rank_zero_synchronized(rank_zero_validation)
         collective = torch.tensor(float(rank + 1))
