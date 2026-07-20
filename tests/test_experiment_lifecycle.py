@@ -64,6 +64,7 @@ class ExperimentLifecycleTests(unittest.TestCase):
         self.assertFalse(manifest['protocol']['run_final_test_after_training'])
         self.assertEqual(manifest['reproducibility']['mode'], 'deterministic')
         self.assertTrue(manifest['reproducibility']['deterministic_algorithms'])
+        self.assertEqual(manifest['training']['ddp_timeout_minutes'], 30)
         self.assertEqual(
             manifest['reproducibility']['cublas_workspace_config'], ':4096:8'
         )

@@ -81,6 +81,7 @@ def build_formal_config(
         'amp': True,
         'amp_initial_scale': 1024,
         'gradient_accumulation_steps': gradient_accumulation_steps,
+        'ddp_timeout_minutes': 180,
         'nEpochs': 20,
         'start_epoch': 0,
         'save_ckpt': True,

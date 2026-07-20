@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `fix/paper-spec-alignment`
+Current task branch: `fix/ddp-validation-timeout`
 
-Completed scope: paper-spec MoE alignment and migration preparation for a 2x3090 role
+Completed scope: paper-spec MoE alignment, 3090 gates, and full-validation DDP timeout diagnosis
 
-Next task branch: remain on `fix/paper-spec-alignment` through 3090 Smoke and throughput freeze
+Next task branch: merge `fix/ddp-validation-timeout`, then restart the formal run with a new RUN_ID
 
 ## 3. 当前里程碑
 
@@ -722,8 +722,12 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 - Paper-spec 双卡 Smoke 每 rank 固定 20 steps，参数同步、rank-local RNG、必需梯度、rank-zero 广播、checkpoint round-trip 和进程组销毁全部通过；每卡峰值 CUDA reserved 约 6.23 GiB，提交绑定 `d7dc523`。
 - 双卡 physical batch `8`、累积 `1` 的受限门禁完成每 rank 4 个训练 micro-batch，并使用 validation batch `32` 完成 64 个验证样本；有效 batch 精确为 `16`，稳定训练 step 约 3.09 秒，峰值 CUDA reserved 约 21.84 GiB。workers `4` 在预热后 data time 接近零，无需增加。
 - 最终 3090 配置冻结为每卡 batch `8`、累积 `1`、validation batch `32`、每 rank workers `4`；这比梯度累积回退更接近论文 physical batch 16。受限指标只证明链路，不作研究解释，门禁未写正式 checkpoint。
+- PR `#23` 已 squash 合并到 `main`，合并提交 `6ce9bfb`。正式 RUN `_007` 绑定该提交并通过 config/manifest/资产哈希、双卡、70 GiB 空间门与 lifecycle verify 后启动；epoch 0 的 1078 个训练 step 全部完成，末步 loss 有限，显存与磁盘稳定。
+- `_007` 在首次完整 validation 的第 `160/420` batch 失败：rank 0 验证运行超过 30 分钟，rank 1 等待后续 broadcast 时触发 PyTorch 默认 NCCL watchdog timeout。无 validation 事件、best 或 last checkpoint 产生，RUN 已如实标记 `failed` 并通过路径、checksum 和预算 verify，禁止复用或伪装恢复。
+- 正式配置现显式固定 `ddp_timeout_minutes: 180`；训练入口验证其为正整数并将其传给 process-group 初始化，生命周期 manifest 同步记录。未设置该字段的旧配置仍保持 30 分钟默认；默认、180 分钟和非法值均有回归测试，本地和目标 3090 环境均为 83 tests OK。
+- 提交 `035c8b9` 的目标端受限双卡门禁在两 rank 日志中均记录 180 分钟 timeout，完成每 rank 4 个 physical batch `8` 训练 step、rank-zero validation 和后续同步后正常退出；未写 checkpoint，GPU 已释放。
 
-下一步：审查并合并 `fix/paper-spec-alignment`，从更新后的 `main` 创建新的正式 RUN_ID/config/manifest。优先使用队列中空间健康且双卡空闲的 3090；若仍被占用，可在已通过门禁的临时 3090 角色启动并持续监控剩余空间，空间低于运行预算和安全余量时不得启动。不得复用旧 RUN_ID 或旧 `top_k=2` checkpoint。
+下一步：在真实双卡上执行包含 rank-zero validation 的 timeout 配置门禁；审查并合并 `fix/ddp-validation-timeout` 后，从新 `main` 创建 RUN `_008` 并重新开始 20 epoch。不得复用 `_007`、旧 RUN_ID 或旧 `top_k=2` checkpoint。
 
 ### T4.5 跨数据集最终评估
 
