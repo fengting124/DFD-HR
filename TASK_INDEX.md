@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `fix/ddp-validation-timeout`
+Current task branch: `fix/distributed-validation-sharding`
 
-Completed scope: paper-spec MoE alignment, 3090 gates, and full-validation DDP timeout diagnosis
+Completed scope: paper-spec MoE alignment, 3090 gates, timeout diagnosis, and distributed validation sharding
 
-Next task branch: merge `fix/ddp-validation-timeout`, then restart the formal run with a new RUN_ID
+Next task branch: merge `fix/distributed-validation-sharding`, then restart the formal run from epoch 0 with a new RUN_ID
 
 ## 3. 当前里程碑
 
@@ -727,7 +727,19 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 - 正式配置现显式固定 `ddp_timeout_minutes: 180`；训练入口验证其为正整数并将其传给 process-group 初始化，生命周期 manifest 同步记录。未设置该字段的旧配置仍保持 30 分钟默认；默认、180 分钟和非法值均有回归测试，本地和目标 3090 环境均为 83 tests OK。
 - 提交 `035c8b9` 的目标端受限双卡门禁在两 rank 日志中均记录 180 分钟 timeout，完成每 rank 4 个 physical batch `8` 训练 step、rank-zero validation 和后续同步后正常退出；未写 checkpoint，GPU 已释放。
 
-下一步：在真实双卡上执行包含 rank-zero validation 的 timeout 配置门禁；审查并合并 `fix/ddp-validation-timeout` 后，从新 `main` 创建 RUN `_008` 并重新开始 20 epoch。不得复用 `_007`、旧 RUN_ID 或旧 `top_k=2` checkpoint。
+后续结果：timeout 修复已由 PR `#24` 合并到 `main@c54c6df`，真实双卡门禁通过；RUN `_008` 随后从 epoch 0 启动。其后续协议替代和收口证据见下文。
+
+分布式完整验证与频率调整：**DONE for implementation and bounded gate; formal restart pending**。完成证据（2026-07-22）：
+
+- RUN `_008` 完成 epoch `0-4` 的训练和验证，并在 epoch 5 中点验证期间收到用户批准的协议变更要求。运行在最近完整的 epoch 4 last checkpoint 边界停止并标记 `aborted`，原因明确记录为由“完整验证双卡分片、每 epoch 一次验证”协议替代；best/last 和 lifecycle 校验均保留。该 RUN 不恢复、不复用，也不混合新旧协议。
+- 验证数据规模保持完整 FF++ c23 validation：`420` 个视频、每视频 `32` 帧；只把频率从首 epoch 一次、后续每 epoch 两次调整为全部 epoch 末尾各一次，因此 20 epoch 的完整验证次数从 `39` 降到 `20`。
+- 新增无 padding、无重复的连续区间分布式验证 sampler。所有 rank 用相同固定 seed 构造验证集，各自独立推理；rank 0 按 rank 顺序聚合 prediction、label 和 loss，断言总样本数与完整数据集一致后计算帧级/视频级指标。指标、TensorBoard、best checkpoint 和数据字典仍仅由 rank 0 写入，结果或异常再广播到全部 rank。
+- 奇数样本回归测试确认 5 个样本被精确分为 `[0, 1]` 和 `[2, 3, 4]`；两进程测试确认聚合顺序、label、loss 与后续 collective 正常。正式配置和 lifecycle manifest 均记录 `distributed_validation: true` 与 `validation_checks_per_epoch: {first_epoch: 1, later_epochs: 1}`。
+- 完整测试为 `86 tests OK`，Python compileall 与 `git diff --check` 通过。实现提交：`b30eb2b`。
+- 真实双卡受限门禁使用正式 pinned CLIP 和 FF++ 资产，只训练 `16` 个样本并验证 `16` 个样本。两 rank 各贡献 `8` 个互斥验证样本，聚合总数 `16`；frame/video 指标、best/last checkpoint、epoch 后同步和正常退出均通过，GPU 已释放。有限指标只证明链路，不作研究解释。
+- 门禁输出和详细路径只保存在 Git 外 scratch；本轮未安装软件、复制数据或权重、修改系统配置，也未启动新的 20 epoch 正式训练。
+
+提交：实现 `b30eb2b`；任务索引提交待当前文档提交。下一步：审查并合并 `fix/distributed-validation-sharding`，从更新后的 `main` 创建新 RUN `_009`，重新生成 config、manifest 和 checksums，完成 GPU/空间/Git/JSON/CLIP 哈希门后从 epoch 0 启动。不得从 `_008` 恢复。
 
 ### T4.5 跨数据集最终评估
 
