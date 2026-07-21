@@ -90,8 +90,9 @@ def build_formal_config(
         'manualSeed': 1024,
         'validation_checks_per_epoch': {
             'first_epoch': 1,
-            'later_epochs': 2,
+            'later_epochs': 1,
         },
+        'distributed_validation': True,
         'run_final_test_after_training': False,
         'reproducibility_mode': reproducibility_mode,
         'cudnn_benchmark': False,

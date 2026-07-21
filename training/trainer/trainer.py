@@ -309,6 +309,32 @@ class Trainer(object):
             raise RuntimeError(f"Rank-0 operation failed: {payload[0]['error']}")
         return payload[0]['value']
 
+    def _distributed_validation_enabled(self):
+        return bool(
+            self.config.get('distributed_validation', False)
+            and self.config.get('ddp', False)
+            and dist.is_available()
+            and dist.is_initialized()
+            and dist.get_world_size() > 1
+        )
+
+    def _run_rank_zero_collective(self, operation):
+        if not self._distributed_validation_enabled():
+            return operation()
+        payload = [None]
+        if dist.get_rank() == 0:
+            try:
+                payload[0] = {'ok': True, 'value': operation()}
+            except Exception as error:
+                payload[0] = {
+                    'ok': False,
+                    'error': f'{type(error).__name__}: {error}',
+                }
+        dist.broadcast_object_list(payload, src=0)
+        if not payload[0]['ok']:
+            raise RuntimeError(f"Distributed evaluation failed: {payload[0]['error']}")
+        return payload[0]['value']
+
     def get_writer(self, phase, dataset_key, metric_key):
         writer_key = f"{phase}-{dataset_key}-{metric_key}"
         if writer_key not in self.writers:
@@ -789,7 +815,10 @@ class Trainer(object):
                             phase=eval_phase,
                         )
 
-                    test_best_metric = self._run_rank_zero_synchronized(run_validation)
+                    if self._distributed_validation_enabled():
+                        test_best_metric = run_validation()
+                    else:
+                        test_best_metric = self._run_rank_zero_synchronized(run_validation)
                 else:
                     test_best_metric = None
 
@@ -821,7 +850,8 @@ class Trainer(object):
             predictions = self.inference(data_dict)
             label_lists += list(data_dict['label'].cpu().detach().numpy())
             prediction_lists += list(predictions['prob'].cpu().detach().numpy())
-            feature_lists += list(predictions['feat'].cpu().detach().numpy())
+            if self.config.get('save_feat', False) and 'feat' in predictions:
+                feature_lists += list(predictions['feat'].cpu().detach().numpy())
             if type(self.model) is not AveragedModel:
                 # compute all losses for each batch data
                 if type(self.model) is DDP:
@@ -833,7 +863,55 @@ class Trainer(object):
                 for name, value in losses.items():
                     test_recorder_loss[name].update(value)
 
-        return test_recorder_loss, np.array(prediction_lists), np.array(label_lists),np.array(feature_lists)
+        predictions = np.array(prediction_lists)
+        labels = np.array(label_lists)
+        features = np.array(feature_lists)
+        if not self._distributed_validation_enabled():
+            return test_recorder_loss, predictions, labels, features
+
+        local_payload = {
+            'losses': {
+                name: {
+                    'sum': float(recorder.sum.detach().cpu())
+                    if isinstance(recorder.sum, torch.Tensor)
+                    else float(recorder.sum),
+                    'num': recorder.num,
+                }
+                for name, recorder in test_recorder_loss.items()
+            },
+            'predictions': predictions,
+            'labels': labels,
+            'features': features,
+        }
+        gathered = [None] * dist.get_world_size() if dist.get_rank() == 0 else None
+        dist.gather_object(local_payload, gathered, dst=0)
+        if dist.get_rank() != 0:
+            return None, None, None, None
+
+        sample_counts = [len(rank_payload['predictions']) for rank_payload in gathered]
+        self.logger.info(
+            'Distributed evaluation coverage: per_rank_samples=%s total_samples=%s',
+            sample_counts,
+            sum(sample_counts),
+        )
+
+        combined_losses = defaultdict(Recorder)
+        for rank_payload in gathered:
+            for name, values in rank_payload['losses'].items():
+                combined_losses[name].sum += values['sum']
+                combined_losses[name].num += values['num']
+
+        def concatenate(name):
+            arrays = [rank_payload[name] for rank_payload in gathered]
+            nonempty = [array for array in arrays if array.size]
+            return np.concatenate(nonempty) if nonempty else np.array([])
+
+        return (
+            combined_losses,
+            concatenate('predictions'),
+            concatenate('labels'),
+            concatenate('features'),
+        )
 
     def save_best(self, epoch, iteration, step, losses_one_dataset_recorder, key, metric_one_dataset, phase):
         best_metric = self.best_metrics_all_time[key].get(self.metric_scoring,
@@ -881,69 +959,87 @@ class Trainer(object):
         self.logger.info(metric_str)
     def test_epoch(self, epoch, iteration, test_data_loaders, step, phase='test', save_best=True):
         evaluation_started_at = time.perf_counter()
-        # set model to eval mode
         self.setEval()
 
-        # define test recorder
         losses_all_datasets = {}
         metrics_all_datasets = {}
         avg_metric = {'acc': 0, 'auc': 0, 'eer': 0, 'ap': 0,'video_auc': 0,'dataset_dict':{}}
-        # testing for all test data
-        keys = test_data_loaders.keys()
+        keys = list(test_data_loaders.keys())
         for key in keys:
-            # save the testing data_dict
             data_dict = test_data_loaders[key].dataset.data_dict
-            self.save_data_dict(phase, data_dict, key)
-
-            # compute loss for each dataset
             losses_one_dataset_recorder, predictions_nps, label_nps, feature_nps = self.test_one_dataset(test_data_loaders[key])
-            # print(f'stack len:{predictions_nps.shape};{label_nps.shape};{len(data_dict["image"])}')
-            losses_all_datasets[key] = losses_one_dataset_recorder
-            metric_inputs = data_dict.get('metric_input')
-            if metric_inputs is None:
-                metric_inputs = [
-                    {'image_path': image_path, 'video_id': video_id}
-                    for image_path, video_id in zip(data_dict['image'], data_dict.get('video_id', data_dict['image']))
-                ]
-            metric_one_dataset=get_test_metrics(y_pred=predictions_nps,y_true=label_nps,img_names=metric_inputs)
-            metrics_all_datasets[key] = self._plain_metric_values(metric_one_dataset)
-            for metric_name, value in metric_one_dataset.items():
-                if metric_name in avg_metric:
-                    avg_metric[metric_name]+=value
-            avg_metric['dataset_dict'][key] = metric_one_dataset[self.metric_scoring]
-            if type(self.model) is AveragedModel:
-                metric_str = f"Iter Final for SWA:    "
-                for k, v in metric_one_dataset.items():
-                    metric_str += f"testing-metric, {k}: {v}    "
-                self.logger.info(metric_str)
-                continue
-            if save_best:
-                self.save_best(epoch, iteration, step, losses_one_dataset_recorder, key, metric_one_dataset, phase)
 
-        if len(keys)>0:
-            # calculate avg value
-            for key in avg_metric:
-                if key != 'dataset_dict':
-                    avg_metric[key] /= len(keys)
-            metrics_all_datasets['avg'] = self._plain_metric_values(avg_metric)
-            if save_best and self.config.get('save_avg',False):
-                self.save_best(epoch, iteration, step, None, 'avg', avg_metric, phase)
+            def process_dataset():
+                expected = len(data_dict['image'])
+                if len(predictions_nps) != expected or len(label_nps) != expected:
+                    raise ValueError(
+                        f'{key} evaluation coverage mismatch: expected {expected}, '
+                        f'got {len(predictions_nps)} predictions and {len(label_nps)} labels'
+                    )
+                self.save_data_dict(phase, data_dict, key)
+                losses_all_datasets[key] = losses_one_dataset_recorder
+                metric_inputs = data_dict.get('metric_input')
+                if metric_inputs is None:
+                    metric_inputs = [
+                        {'image_path': image_path, 'video_id': video_id}
+                        for image_path, video_id in zip(
+                            data_dict['image'],
+                            data_dict.get('video_id', data_dict['image']),
+                        )
+                    ]
+                metric_one_dataset = get_test_metrics(
+                    y_pred=predictions_nps,
+                    y_true=label_nps,
+                    img_names=metric_inputs,
+                )
+                metrics_all_datasets[key] = self._plain_metric_values(metric_one_dataset)
+                for metric_name, value in metric_one_dataset.items():
+                    if metric_name in avg_metric:
+                        avg_metric[metric_name] += value
+                avg_metric['dataset_dict'][key] = metric_one_dataset[self.metric_scoring]
+                if type(self.model) is AveragedModel:
+                    metric_str = "Iter Final for SWA:    "
+                    for metric_name, value in metric_one_dataset.items():
+                        metric_str += f"testing-metric, {metric_name}: {value}    "
+                    self.logger.info(metric_str)
+                elif save_best:
+                    self.save_best(
+                        epoch,
+                        iteration,
+                        step,
+                        losses_one_dataset_recorder,
+                        key,
+                        metric_one_dataset,
+                        phase,
+                    )
 
-        self._record_validation(
-            phase=phase,
-            epoch=epoch,
-            iteration=iteration,
-            global_step=step,
-            losses=losses_all_datasets,
-            metrics=metrics_all_datasets,
-            elapsed_time=time.perf_counter() - evaluation_started_at,
-        )
+            self._run_rank_zero_collective(process_dataset)
 
-        self.logger.info(f'===> {phase.capitalize()} Done!')
-        if not save_best:
-            self.save_metric_report(phase, metrics_all_datasets)
-            return metrics_all_datasets
-        return self._plain_best_metrics()  # return all types of mean metrics for determining the best ckpt
+        def finalize_evaluation():
+            if keys:
+                for metric_name in avg_metric:
+                    if metric_name != 'dataset_dict':
+                        avg_metric[metric_name] /= len(keys)
+                metrics_all_datasets['avg'] = self._plain_metric_values(avg_metric)
+                if save_best and self.config.get('save_avg', False):
+                    self.save_best(epoch, iteration, step, None, 'avg', avg_metric, phase)
+
+            self._record_validation(
+                phase=phase,
+                epoch=epoch,
+                iteration=iteration,
+                global_step=step,
+                losses=losses_all_datasets,
+                metrics=metrics_all_datasets,
+                elapsed_time=time.perf_counter() - evaluation_started_at,
+            )
+            self.logger.info(f'===> {phase.capitalize()} Done!')
+            if not save_best:
+                self.save_metric_report(phase, metrics_all_datasets)
+                return metrics_all_datasets
+            return self._plain_best_metrics()
+
+        return self._run_rank_zero_collective(finalize_evaluation)
 
     @torch.no_grad()
     def inference(self, data_dict):

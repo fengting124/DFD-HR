@@ -92,8 +92,9 @@ class FormalTrainingConfigTests(unittest.TestCase):
 
             self.assertEqual(
                 config['validation_checks_per_epoch'],
-                {'first_epoch': 1, 'later_epochs': 2},
+                {'first_epoch': 1, 'later_epochs': 1},
             )
+            self.assertTrue(config['distributed_validation'])
             self.assertFalse(config['run_final_test_after_training'])
             self.assertEqual(config['reproducibility_mode'], 'deterministic')
             self.assertFalse(config['cudnn_benchmark'])

@@ -312,6 +312,7 @@ def initialize_run(args):
             'validation_checks_per_epoch',
             {'first_epoch': 1, 'later_epochs': 2},
         ),
+        'distributed_validation': config.get('distributed_validation', False),
         'run_final_test_after_training': config.get(
             'run_final_test_after_training', True
         ),

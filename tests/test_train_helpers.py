@@ -1,12 +1,14 @@
 import sys
 import tempfile
 import unittest
+import random
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
 import torch
+import numpy as np
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -102,11 +104,11 @@ class TrainHelpersTests(unittest.TestCase):
     def test_final_test_requires_an_explicit_dataset(self):
         self.assertFalse(train.should_run_final_test({'test_dataset': []}))
 
-    def test_validation_schedule_matches_official_epoch_profile(self):
-        schedule = {'first_epoch': 1, 'later_epochs': 2}
+    def test_validation_schedule_runs_once_at_each_epoch_end(self):
+        schedule = {'first_epoch': 1, 'later_epochs': 1}
 
         self.assertEqual(resolve_validation_iterations(5, 0, schedule), {5})
-        self.assertEqual(resolve_validation_iterations(5, 1, schedule), {3, 5})
+        self.assertEqual(resolve_validation_iterations(5, 1, schedule), {5})
 
     def test_validation_schedule_caps_checks_at_batch_count(self):
         self.assertEqual(resolve_validation_iterations(2, 4, 5), {1, 2})
@@ -169,6 +171,46 @@ class TrainHelpersTests(unittest.TestCase):
 
         self.assertEqual(train_generator.initial_seed(), 1024)
         self.assertEqual(validation_generator.initial_seed(), 11024)
+
+    def test_distributed_eval_sampler_has_exact_ordered_coverage(self):
+        dataset = list(range(5))
+        shards = [
+            list(train.DistributedEvalSampler(dataset, num_replicas=2, rank=rank))
+            for rank in range(2)
+        ]
+
+        self.assertEqual(shards, [[0, 1], [2, 3, 4]])
+        self.assertEqual(shards[0] + shards[1], list(range(5)))
+
+    def test_eval_dataset_seed_is_rank_independent_and_restores_rng(self):
+        config = {'manualSeed': 1024}
+
+        def fake_dataset(config, mode):
+            del config, mode
+            return (random.random(), np.random.random(), torch.rand(1).item())
+
+        random.seed(7)
+        np.random.seed(7)
+        torch.manual_seed(7)
+        expected_after = (random.random(), np.random.random(), torch.rand(1).item())
+        random.seed(7)
+        np.random.seed(7)
+        torch.manual_seed(7)
+        with patch.object(train, 'DeepfakeAbstractBaseDataset', side_effect=fake_dataset):
+            first = train.build_eval_dataset(config, 'val')
+            random.seed(99)
+            np.random.seed(99)
+            torch.manual_seed(99)
+            second = train.build_eval_dataset(config, 'val')
+
+        self.assertEqual(first, second)
+        random.seed(7)
+        np.random.seed(7)
+        torch.manual_seed(7)
+        with patch.object(train, 'DeepfakeAbstractBaseDataset', side_effect=fake_dataset):
+            train.build_eval_dataset(config, 'val')
+        actual_after = (random.random(), np.random.random(), torch.rand(1).item())
+        self.assertEqual(actual_after, expected_after)
 
     def test_deterministic_mode_cannot_disable_deterministic_algorithms(self):
         config = {
