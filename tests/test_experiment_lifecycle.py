@@ -54,8 +54,9 @@ class ExperimentLifecycleTests(unittest.TestCase):
 
         self.assertEqual(
             manifest['protocol']['validation_checks_per_epoch'],
-            {'first_epoch': 1, 'later_epochs': 2},
+            {'first_epoch': 1, 'later_epochs': 1},
         )
+        self.assertTrue(manifest['protocol']['distributed_validation'])
         self.assertEqual(manifest['protocol']['mode'], 'paper_spec')
         self.assertEqual(
             manifest['protocol']['paper_spec_basis']['moe_routing'],

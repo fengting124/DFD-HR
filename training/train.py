@@ -23,6 +23,7 @@ import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.utils.data
 import torch.optim as optim
+from torch.utils.data import Sampler
 from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 
@@ -196,6 +197,50 @@ def build_data_loader_generator(config, role):
     return generator
 
 
+class DistributedEvalSampler(Sampler):
+    """Partition evaluation data exactly, without padding or duplication."""
+
+    def __init__(self, dataset, num_replicas=None, rank=None):
+        if num_replicas is None:
+            if not dist.is_available() or not dist.is_initialized():
+                raise RuntimeError('Distributed evaluation requires an initialized process group')
+            num_replicas = dist.get_world_size()
+        if rank is None:
+            rank = dist.get_rank()
+        if num_replicas < 1 or rank < 0 or rank >= num_replicas:
+            raise ValueError('Invalid distributed evaluation rank or world size')
+        self.dataset = dataset
+        self.num_replicas = num_replicas
+        self.rank = rank
+        self.start = len(dataset) * rank // num_replicas
+        self.end = len(dataset) * (rank + 1) // num_replicas
+
+    def __iter__(self):
+        return iter(range(self.start, self.end))
+
+    def __len__(self):
+        return self.end - self.start
+
+
+def build_eval_dataset(config, mode):
+    role_offsets = {'val': 10_000, 'test': 20_000}
+    if mode not in role_offsets:
+        raise ValueError(f'Unsupported evaluation mode: {mode}')
+    seed = int(config['manualSeed']) + role_offsets[mode]
+    python_state = random.getstate()
+    numpy_state = np.random.get_state()
+    torch_state = torch.random.get_rng_state()
+    try:
+        random.seed(seed)
+        np.random.seed(seed % (2**32))
+        torch.manual_seed(seed)
+        return DeepfakeAbstractBaseDataset(config=config, mode=mode)
+    finally:
+        random.setstate(python_state)
+        np.random.set_state(numpy_state)
+        torch.random.set_rng_state(torch_state)
+
+
 def prepare_training_data(config):
 
     train_set = DeepfakeAbstractBaseDataset(
@@ -238,12 +283,17 @@ def prepare_eval_data(config, mode, dataset_names):
             config['validation_dataset'] = dataset_name
         else:
             config['test_dataset'] = dataset_name
-        test_set = DeepfakeAbstractBaseDataset(
-                    config=config,
-                    mode=mode,
-            )
+        test_set = build_eval_dataset(config, mode)
         limit_key = 'validation_max_samples' if mode == 'val' else 'test_max_samples'
         apply_fixed_subset(test_set, config.get(limit_key), mode)
+
+        distributed_evaluation = bool(
+            config.get('distributed_validation', False)
+            and config.get('ddp', False)
+            and dist.is_available()
+            and dist.is_initialized()
+        )
+        sampler = DistributedEvalSampler(test_set) if distributed_evaluation else None
 
         test_data_loader = \
             torch.utils.data.DataLoader(
@@ -252,7 +302,8 @@ def prepare_eval_data(config, mode, dataset_names):
                 shuffle=False,
                 num_workers=int(config['workers']),
                 collate_fn=test_set.collate_fn,
-                drop_last=(dataset_name == 'DeepFakeDetection'),
+                sampler=sampler,
+                drop_last=(dataset_name == 'DeepFakeDetection' and not distributed_evaluation),
                 worker_init_fn=seed_data_loader_worker,
                 generator=build_data_loader_generator(config, mode),
             )
@@ -461,7 +512,10 @@ def main():
                 save_best=False,
             )
 
-        final_test_metrics = trainer._run_rank_zero_synchronized(run_final_test)
+        if trainer._distributed_validation_enabled():
+            final_test_metrics = run_final_test()
+        else:
+            final_test_metrics = trainer._run_rank_zero_synchronized(run_final_test)
         if final_test_metrics is not None:
             logger.info("Final test metrics after validation-selected training: {}".format(parse_metric_for_print(final_test_metrics)))
 

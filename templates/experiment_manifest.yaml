@@ -37,7 +37,8 @@ protocol:
   test_frames_per_video: 32
   validation_checks_per_epoch:
     first_epoch: 1
-    later_epochs: 2
+    later_epochs: 1
+  distributed_validation: true
   run_final_test_after_training: false
 
 model:
