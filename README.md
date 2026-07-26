@@ -16,6 +16,7 @@
 ## 📑 Table of Contents
 
 - [Introduction](#-introduction)
+- [Implementation Guide](#-implementation-guide)
 - [Quick Start](#-quick-start)
   - [1. Installation](#1-installation)
   - [2. Data Preparation](#2-data-preparation)
@@ -47,6 +48,40 @@ The following table displays **part of the results** of our method on **the deep
 <p align="center">
   <img src="./misc/deepfake_tab1.png" width="800">
 </p>
+
+---
+
+## Implementation Guide
+
+The paper-aligned 448 x 448 data flow is:
+
+```text
+input [B, 3, 448, 448]
+  -> global resize [B, 3, 224, 224]
+  -> four local crops [4B, 3, 224, 224]
+  -> frozen CLIP tokens [N, 257, 1024]
+  -> final four blocks: sample routing + 75% token selection
+  -> CLIP projection [N, 257, 768]
+  -> learned query fusion of four local CLS tokens [B, 1, 768]
+  -> concatenate global/local CLS features [B, 1536]
+  -> two-class logits [B, 2]
+```
+
+Read the implementation in this order:
+
+1. `training/detectors/utils/core_query_loss.py`: global/local view creation
+   and query fusion.
+2. `training/detectors/dfd_hr_detector.py::features_encoder`: Early Layer
+   Pruning over the final four CLIP blocks.
+3. `training/detectors/dfd_hr_detector.py::features_encoder_layer_select`:
+   Token Selection, rank loss, and token restoration.
+4. `training/detectors/utils/moe_adapter.py`: token-wise expert weighting.
+5. `training/detectors/dfd_hr_detector.py::get_losses`: classification and
+   Spearman objectives.
+
+For an executable, weight-free walkthrough with tensor-shape checks and a
+careful separation of established components from DFD-HR contributions, open
+[`notebooks/06_hierarchical_routing_tutorial.ipynb`](notebooks/06_hierarchical_routing_tutorial.ipynb).
 
 ---
 

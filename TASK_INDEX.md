@@ -2,7 +2,7 @@
 
 本文件是新机器、新 Codex 会话和实验中断后的任务入口。通用规范见 `AGENTS.md`，详细实验流程见 `docs/EXPERIMENT_WORKFLOW.md`。
 
-> 当前状态：控制节点审计、实验生命周期、Jupyter 00-05、训练正确性修复、单/双卡 Smoke、pinned CLIP Mini Run 及正式训练协议修复已有证据；完整训练、归档实跑和部分节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
+> 当前状态：控制节点审计、实验生命周期、Jupyter 00-06、训练正确性修复、单/双卡 Smoke、pinned CLIP Mini Run 及正式训练协议修复已有证据；完整训练、归档实跑和部分节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
 
 ## 1. 启动顺序
 
@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `fix/distributed-validation-sharding`
+Current task branch: `docs/method-implementation-guide`
 
-Completed scope: paper-spec MoE alignment, 3090 gates, timeout diagnosis, and distributed validation sharding
+Completed scope: paper-spec MoE alignment, distributed validation sharding, core method annotations, and a weight-free hierarchical-routing tutorial
 
-Next task branch: merge `fix/distributed-validation-sharding`, then restart the formal run from epoch 0 with a new RUN_ID
+Next task branch: review and merge `docs/method-implementation-guide`; keep the live evaluation checkout unchanged
 
 ## 3. 当前里程碑
 
@@ -746,6 +746,31 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 **状态：BLOCKED by T4.4**
 
 冻结 best checkpoint 后一次性执行，保存帧级/视频级指标、聚合方法、样本数、代码/配置/数据/权重哈希。
+
+## P5：方法理解与代码可读性
+
+### T5.1 DFD-HR 方法数据流注释与教程
+
+**状态：DONE**
+
+- 核心 detector、多尺度融合、层/token router、MoE Adapter 和可微
+  Spearman 实现已补充凝练注释，明确 448 输入到 `[B, 2]` logits 的张量
+  形状与调用顺序。
+- 注释区分 CLIP、Attention、Adapter、MoE 等成熟组件，论文明确提出的
+  层/token/专家联合路由，以及尚需消融验证的研究方向，不宣称未验证的新颖性。
+- `notebooks/06_hierarchical_routing_tutorial.ipynb` 为无输出源码 Notebook；
+  不加载权重、不读取数据、不使用 GPU，记录当前实现中首路由层 Spearman、
+  `top_k=4` 全专家激活、未消费的 load-balancing 配置和固定四局部 crop 等
+  复现注意点。
+- 验证证据：87 tests OK，Python compileall、JSON/nbformat 结构与
+  `git diff --check` 通过；Notebook 使用真实 `dfd-hr` kernel 在 Git 外执行，
+  14 cells、5 code cells、0 errors。
+- 正在运行的跨数据集评估工作树未修改；本任务只在独立 worktree 和分支完成。
+
+提交：`docs(method): explain hierarchical routing data flow`（本分支）。
+
+下一步：审查并合并本分支；待活动评估封存后，再把新的 DFD-HR 提交同步进统一
+DDF 仓库的 `methods/dfd_hr` 子树，避免对旧快照重复修改。
 
 ## 4. 每次任务结束时必须更新
 
