@@ -49,6 +49,8 @@ parser.add_argument('--weights_path', type=str,
                     default='./logs/dfd_hr/ckpt_best.pth')
 parser.add_argument('--architecture_only', action='store_true',
                     help='construct the backbone without downloading pretrained weights')
+parser.add_argument('--trusted_checkpoint', action='store_true',
+                    help='allow full deserialization of a verified project checkpoint')
 parser.add_argument('--max_samples_per_dataset', type=int)
 parser.add_argument('--test_batch_size', type=int)
 parser.add_argument('--workers', type=int)
@@ -208,7 +210,11 @@ def main():
             epoch = int(weights_path.split('/')[-1].split('.')[0].split('_')[2])
         except:
             epoch = 0
-        checkpoint_info = load_checkpoint_strict(model, weights_path)
+        checkpoint_info = load_checkpoint_strict(
+            model,
+            weights_path,
+            trusted=args.trusted_checkpoint,
+        )
         model = model.to(device)
         print('===> Load checkpoint done!')
     else:

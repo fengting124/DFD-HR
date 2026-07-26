@@ -47,6 +47,21 @@ class EvaluationUtilsTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 load_checkpoint_strict(model, path)
 
+    def test_full_project_checkpoint_requires_explicit_trust(self):
+        model = torch.nn.Linear(2, 1)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = os.path.join(temp_dir, 'checkpoint.pth')
+            torch.save({
+                'state_dict': model.state_dict(),
+                'best_metric': np.float64(0.75),
+            }, path)
+
+            with self.assertRaisesRegex(ValueError, 'trusted=True'):
+                load_checkpoint_strict(model, path)
+
+            info = load_checkpoint_strict(model, path, trusted=True)
+            self.assertEqual(info, {'tensor_count': 2})
+
     def test_fixed_subset_is_deterministic_and_balanced(self):
         dataset = SimpleNamespace(
             image_list=['z1', 'b0', 'a1', 'a0', 'z0'],

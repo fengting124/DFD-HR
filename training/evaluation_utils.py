@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import pickle
 import tempfile
 from collections import defaultdict
 from collections.abc import Mapping
@@ -27,8 +28,17 @@ def normalize_checkpoint_state_dict(checkpoint):
     return normalized
 
 
-def load_checkpoint_strict(model, checkpoint_path, map_location='cpu'):
-    checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
+def load_checkpoint_strict(model, checkpoint_path, map_location='cpu', *, trusted=False):
+    try:
+        checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=True)
+    except pickle.UnpicklingError as error:
+        if not trusted:
+            raise ValueError(
+                'Checkpoint contains objects rejected by the restricted loader. '
+                'Only retry with trusted=True for a checkpoint produced by this project '
+                'and verified from a trusted source.'
+            ) from error
+        checkpoint = torch.load(checkpoint_path, map_location=map_location, weights_only=False)
     state_dict = normalize_checkpoint_state_dict(checkpoint)
     model.load_state_dict(state_dict, strict=True)
     return {'tensor_count': len(state_dict)}
