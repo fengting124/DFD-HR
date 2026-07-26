@@ -79,6 +79,35 @@ Read the implementation in this order:
 5. `training/detectors/dfd_hr_detector.py::get_losses`: classification and
    Spearman objectives.
 
+### Loss and optimizer
+
+DFD-HR emits two logits per frame:
+
+```text
+logits z [B, 2], target y [B]
+L_cls  = CrossEntropyLoss(z, y)
+L_rank = 1 - differentiable_spearman(token_score, global_similarity)
+L      = L_cls + 0.1 * L_rank
+```
+
+Cross-entropy applies log-softmax internally. `softmax(z)[:, 1]` is computed
+separately for fake-class metrics and must not be fed back into the loss. In
+the current implementation, `L_rank` is produced at the first routed CLIP
+block; later routed blocks still select tokens but do not add another rank
+term.
+
+The paper-aligned optimizer is Adam with fixed learning rate `1e-4`,
+`betas=(0.9, 0.999)`, epsilon `1e-8`, and weight decay `5e-4`. CLIP is frozen;
+Adam updates the routers, MoE adapters, query fusion, and classifier. The
+formal configuration has no learning-rate scheduler.
+
+With AMP and accumulation, every micro-batch backpropagates
+`L / accumulation_window`. DDP skips gradient all-reduce on non-final
+micro-batches. At the window boundary, gradients are unscaled, checked for
+finite values, synchronized, and passed to `optimizer.step()`. A complete
+resume checkpoint also stores Adam moments, scheduler/GradScaler state, best
+metrics, and per-rank random-number-generator state.
+
 For an executable, weight-free walkthrough with tensor-shape checks and a
 careful separation of established components from DFD-HR contributions, open
 [`notebooks/06_hierarchical_routing_tutorial.ipynb`](notebooks/06_hierarchical_routing_tutorial.ipynb).

@@ -406,12 +406,20 @@ class DFDHRDetector(AbstractDetector):
         return self.head(features)
 
     def get_losses(self, data_dict: dict, pred_dict: dict) -> dict:
+        """Combine classification and token-ranking supervision.
+
+        ``L = CE([B,2], label[B]) + 0.1 * (1 - Spearman)`` follows paper
+        Eq. 16. The current implementation supplies Spearman from the first
+        routed block only. If no global-local rank target was computed, the
+        second term is exactly zero.
+        """
         label = data_dict['label']
         pred = pred_dict['cls']
         loss_spearman = pred_dict['loss_spearman']
         if loss_spearman is None:
             loss_spearman = pred.new_zeros(())
-        loss = self.loss_func(pred, label) + 0.1 * loss_spearman
+        classification_loss = self.loss_func(pred, label)
+        loss = classification_loss + 0.1 * loss_spearman
         loss_dict = {'overall': loss}
         return loss_dict
 
