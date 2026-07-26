@@ -758,16 +758,20 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
   形状与调用顺序。
 - 注释区分 CLIP、Attention、Adapter、MoE 等成熟组件，论文明确提出的
   层/token/专家联合路由，以及尚需消融验证的研究方向，不宣称未验证的新颖性。
+- loss、optimizer、scheduler、AMP、梯度累积、DDP 同步和完整 checkpoint
+  resume 路径已补充注释；明确正式协议为两类 logits 的交叉熵加首路由层
+  Spearman、冻结 CLIP 和固定学习率 Adam。
 - `notebooks/06_hierarchical_routing_tutorial.ipynb` 为无输出源码 Notebook；
   不加载权重、不读取数据、不使用 GPU，记录当前实现中首路由层 Spearman、
   `top_k=4` 全专家激活、未消费的 load-balancing 配置和固定四局部 crop 等
-  复现注意点。
+  复现注意点，并包含 loss 组合与有效 batch 的可执行示例。
 - 验证证据：87 tests OK，Python compileall、JSON/nbformat 结构与
   `git diff --check` 通过；Notebook 使用真实 `dfd-hr` kernel 在 Git 外执行，
-  14 cells、5 code cells、0 errors。
+  17 cells、7 code cells、0 errors。
 - 正在运行的跨数据集评估工作树未修改；本任务只在独立 worktree 和分支完成。
 
-提交：`docs(method): explain hierarchical routing data flow`（本分支）。
+提交：`ee52222`（模型数据流注释）、`398edf2`（方法教程）和 `9379694`
+（loss、optimizer 与训练运行时注释）。
 
 下一步：审查并合并本分支；待活动评估封存后，再把新的 DFD-HR 提交同步进统一
 DDF 仓库的 `methods/dfd_hr` 子树，避免对旧快照重复修改。
