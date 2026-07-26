@@ -1,29 +1,16 @@
-'''
-# author: Jiamu Sun
-# email: genisun@tencent.com
-# date: 2026-05-28
-# description: Class for the DFDHRDetector
+"""DFD-HR detector: frozen CLIP features with hierarchical routing.
 
-Functions in the Class are summarized as:
-1. __init__: Initialization
-2. build_backbone: Backbone-building
-3. build_loss: Loss-function-building
-4. features: Feature-extraction
-5. classifier: Classification
-6. get_losses: Loss-computation
-7. get_train_metrics: Training-metrics-computation
-8. get_test_metrics: Testing-metrics-computation
-9. forward: Forward-propagation
+The implementation follows the CVPR 2026 method in four steps:
 
-Reference:
-@inproceedings{rossler2019faceforensics++,
-  title={Faceforensics++: Learning to detect manipulated facial images},
-  author={Rossler, Andreas and Cozzolino, Davide and Verdoliva, Luisa and Riess, Christian and Thies, Justus and Nie{\ss}ner, Matthias},
-  booktitle={Proceedings of the IEEE/CVF international conference on computer vision},
-  pages={1--11},
-  year={2019}
-}
-'''
+1. Encode one 224 x 224 global view and four 224 x 224 local crops.
+2. Route samples through the final CLIP blocks (Early Layer Pruning).
+3. Process only high-scoring tokens in routed blocks (Token Selection).
+4. Adapt attention/MLP outputs with token-wise mixtures of bottleneck experts.
+
+CLIP, adapters, attention, and mixture-of-experts gating are established
+building blocks. The DFD-HR contribution is their joint layer/token routing,
+the global-local rank constraint, and the resulting multi-scale fusion.
+"""
 
 import logging
 from typing import Optional
@@ -52,10 +39,12 @@ logger = logging.getLogger(__name__)
 
 
 def compute_routed_layer_indices(layer_count, remain_layer):
+    """Return the suffix of blocks equipped with layer/token routing."""
     return list(range(remain_layer, layer_count))
 
 
 def build_moe_adapter_kwargs(config):
+    """Normalize the public MoE configuration used by both adapter branches."""
     moe_config = config.get('backbone_config', {}).get('moe', {})
     return {
         'num_experts': moe_config.get('num_experts', 4),
@@ -67,6 +56,14 @@ def build_moe_adapter_kwargs(config):
 
 @DETECTOR.register_module(module_name='dfd_hr')
 class DFDHRDetector(AbstractDetector):
+    """Hierarchical-routing classifier on a frozen CLIP ViT-L/14.
+
+    With the paper-aligned configuration, each 224 crop becomes 257 CLIP tokens
+    of width 1024 (one CLS plus 16 x 16 patches). CLIP projects tokens to width
+    768; global and local prefix features are concatenated into ``[B, 1536]``
+    before the two-class head.
+    """
+
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -82,7 +79,7 @@ class DFDHRDetector(AbstractDetector):
         )
         self.query_token = nn.Parameter(torch.randn(1, 1, projection_dim))
         self.query_attn = nn.MultiheadAttention(projection_dim, num_heads=4, batch_first=True)
-        # Insert MoE adapters into both attn and mlp branches.
+        # DFD-HR Eq. 12: one MoE adapter after attention and one after the MLP.
         self.adapters_attn = nn.ModuleList([
             MoEAdapter(
                 D_features=hidden_size,
@@ -101,7 +98,7 @@ class DFDHRDetector(AbstractDetector):
                 **moe_kwargs,
             ) for _ in range(layer_count)
         ])
-        # Token-level and layer-level routers
+        # DFD-HR Eqs. 2 and 7: independent layer and token judges per block.
         self.token_router = nn.ModuleList(TokenRouter(hidden_size) for _ in range(layer_count))
         self.layer_router = nn.ModuleList(LayerRouter(hidden_size) for _ in range(layer_count))
         self.capacity = config['backbone_config']['capacity']
@@ -135,7 +132,18 @@ class DFDHRDetector(AbstractDetector):
         loss_func = loss_class()
         return loss_func
 
-    def forward_features_loss(self, images: torch.tensor, feature_global=None) -> torch.tensor:
+    def forward_features_loss(
+        self,
+        images: torch.Tensor,
+        feature_global=None,
+    ) -> tuple[list[torch.Tensor], Optional[torch.Tensor]]:
+        """Encode one crop batch while retaining pre-projection CLIP tokens.
+
+        ``images`` is ``[N,3,224,224]``. Embeddings and encoder output are
+        ``[N,257,1024]``; the visual projection produces ``[N,257,768]``.
+        Pre-projection tokens are retained because the token router and global
+        similarity target both operate in CLIP's 1024-dimensional hidden space.
+        """
         hidden_states = self.backbone.embeddings(images)
         hidden_states = self.backbone.pre_layrnorm(hidden_states)
 
@@ -146,8 +154,15 @@ class DFDHRDetector(AbstractDetector):
         feat = self.visual_projection(self.backbone.post_layernorm(output.reshape(-1, D))).reshape(B, L, -1)
         return [feat, output], loss_spearman
 
-    def features(self, data_dict: dict) -> torch.tensor:
-        
+    def features(self, data_dict: dict) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """Fuse global and local views into the classifier feature.
+
+        For ``image=[B,3,448,448]``, the 0.5-scale branch is one global crop and
+        the 1.0-scale branch is split into four local crops. Learned query
+        attention fuses the four local CLS tokens. Concatenating global/local
+        projected features yields ``outputs=[B,257,1536]``; token 0 is the
+        ``[B,1536]`` classifier input.
+        """
         outputs, loss_spearman = multiscale_forward_query_loss(
             self.forward_features_loss,
             self.query_token,
@@ -161,8 +176,15 @@ class DFDHRDetector(AbstractDetector):
 
         return feat, loss_spearman
 
-    def features_encoder(self, inputs_embeds: torch.tensor, feature_global=None) -> torch.tensor:
-        # Early Layer Pruning
+    def features_encoder(self, inputs_embeds: torch.Tensor, feature_global=None):
+        """Run CLIP blocks with irreversible sample exits in the routed suffix.
+
+        Blocks before ``remain_layer`` process every sample. In each routed
+        block, a straight-through Gumbel-Sigmoid decision updates
+        ``active_mask``. Once a sample exits, the multiplicative mask keeps it
+        inactive in every deeper block and its existing token tensor is used
+        for classification.
+        """
         attention_mask = None
         causal_attention_mask = None
         output_attentions = self.backbone.encoder.config.output_attentions
@@ -176,9 +198,8 @@ class DFDHRDetector(AbstractDetector):
 
         hidden_states = inputs_embeds
 
-        # MoD full-layer drop (gumbel exit).
         batch_size = hidden_states.size(0)
-        # active_mask == 1 means the sample is still "active" and keeps computing layers.
+        # [B]: 1 means this sample still enters deeper routed blocks.
         active_mask = hidden_states.new_ones(batch_size)
         loss_spearman = hidden_states.new_zeros(())
 
@@ -186,11 +207,11 @@ class DFDHRDetector(AbstractDetector):
             if output_hidden_states:
                 encoder_states = encoder_states + (hidden_states,)
 
-            # MoD full-layer drop (gumbel exit).
             if idx in self.routed_layer_indices:
                 hidden_states_cls = hidden_states[:, 0, :]
 
-                logits = self.layer_router[idx](hidden_states_cls)  # shape: (batch_size, 1) or (batch_size, dim)
+                # DFD-HR Eqs. 2-5: [B,1024] -> continuation logits [B,1].
+                logits = self.layer_router[idx](hidden_states_cls)
                 if self.training:
                     # Sampled probability.
                     p_soft = gumbel_sigmoid_sample(logits)
@@ -199,20 +220,19 @@ class DFDHRDetector(AbstractDetector):
                 else:
                     p = (torch.sigmoid(logits) > 0.5).float()  # 0 or 1
 
-                # Update active_mask: samples that already exited stay 0, others follow current p.
+                # Multiplication makes exit irreversible across deeper layers.
                 active_mask = active_mask * p.squeeze(1)
 
-                # For samples with active_mask == 1, compute the current layer; otherwise keep hidden_states unchanged.
+                # Only active samples pay for token selection and this block.
                 if active_mask.sum() > 0:
-                    # Select active samples via index_select / mask.
                     active_indices = active_mask.nonzero(as_tuple=True)[0]
-
-                    # Gather hidden_states for active samples.
                     active_hidden_states = hidden_states[active_indices]
 
                     if idx == self.config['backbone_config']['remain_layer'] and feature_global is not None:
+                        # The current implementation applies the Spearman target
+                        # at the first routed block; all routed blocks still
+                        # perform token selection.
                         active_feature_global = feature_global[active_indices]
-                        # Compute the output of this layer.
                         layer_outputs, loss_spearman = self.features_encoder_layer_select(
                             idx,
                             active_hidden_states,
@@ -222,7 +242,6 @@ class DFDHRDetector(AbstractDetector):
                             active_feature_global,
                         )
                     else:
-                        # Compute the output of this layer.
                         layer_outputs = self.features_encoder_layer_select(
                             idx,
                             active_hidden_states,
@@ -233,18 +252,14 @@ class DFDHRDetector(AbstractDetector):
                         )
                     updated_active_hidden = layer_outputs[0]
 
-                    # Scatter back to the original positions in hidden_states.
+                    # Exited samples retain their previous tokens in the batch.
                     hidden_states[active_indices] = updated_active_hidden
 
                     if output_attentions:
-                        # Keep attentions corresponding to active_indices; aggregation can happen later.
                         all_attentions = all_attentions + (layer_outputs[1],)
-                else:
-                    # All samples have exited, hidden_states no longer changes.
-                    pass
 
             else:
-                # idx < remain_layer: compute all samples normally.
+                # Dense prefix: standard CLIP block plus the MoE adapters.
                 layer_outputs = self.features_encoder_layer(
                     idx,
                     hidden_states,
@@ -273,6 +288,7 @@ class DFDHRDetector(AbstractDetector):
             ), loss_spearman
 
     def features_encoder_layer(self, idx: int, hidden_states: torch.Tensor, attention_mask: torch.Tensor, causal_attention_mask: torch.Tensor, output_attentions: Optional[bool] = False):
+        """Run one full CLIP block with shape-preserving MoE adapters."""
         residual = hidden_states
 
         hidden_states = self.backbone.encoder.layers[idx].layer_norm1(hidden_states)
@@ -283,7 +299,7 @@ class DFDHRDetector(AbstractDetector):
             output_attentions=output_attentions,
         )
 
-        # Insert MoE adapter.
+        # Adapter output has the same [B,L,1024] contract as attention.
         hidden_states = self.adapters_attn[idx](hidden_states)
 
         hidden_states = residual + hidden_states
@@ -292,7 +308,6 @@ class DFDHRDetector(AbstractDetector):
         hidden_states = self.backbone.encoder.layers[idx].layer_norm2(hidden_states)
         hidden_states = self.backbone.encoder.layers[idx].mlp(hidden_states)
 
-        # Insert MoE adapter.
         hidden_states = self.adapters_mlp[idx](hidden_states)
 
         hidden_states = residual + hidden_states
@@ -305,37 +320,43 @@ class DFDHRDetector(AbstractDetector):
         return outputs
 
     def features_encoder_layer_select(self, idx: int, hidden_states: torch.Tensor, attention_mask: torch.Tensor, causal_attention_mask: torch.Tensor, output_attentions: Optional[bool] = False, feature_global=None):
+        """Process the top-scoring token subset, then restore sequence layout.
 
+        Input and output are ``[B,L,D]``. The token judge emits ``[B,L]`` and
+        ``capacity`` selects ``k=floor(capacity*L)`` tokens per active sample.
+        Selected tokens traverse attention, MLP, and MoE adapters; unselected
+        tokens bypass the block unchanged before the two sets are merged back
+        into their original positions (paper Eqs. 7-12).
+        """
         b, s, d = hidden_states.shape
-        # Compute importance weight for each token.
+        # DFD-HR Eq. 7: one scalar forgery score for every token.
         weights = self.token_router[idx](hidden_states)
 
         if feature_global is not None:
-            # 1) Normalize first.
-            hidden_states_norm = F.normalize(hidden_states, p=2, dim=-1)       # (B, 257, 1024)
-            feature_global_norm = F.normalize(feature_global, p=2, dim=-1)     # (B, 1024)
-
-            # 2) Compute similarity via inner product.
-            sim = torch.einsum('btd,bd->bt', hidden_states_norm, feature_global_norm)    # (B, 257)
+            # DFD-HR Eqs. 9-10: align token-score ranking with cosine
+            # similarity to the global CLS prior.
+            hidden_states_norm = F.normalize(hidden_states, p=2, dim=-1)
+            feature_global_norm = F.normalize(feature_global, p=2, dim=-1)
+            sim = torch.einsum('btd,bd->bt', hidden_states_norm, feature_global_norm)
 
             rank_loss = spearman_corr(weights, sim).mean()
-            # The target is for rank_loss to approach 1 (the larger the better), so take the complement -> range [0, 2].
+            # Correlation approaches 1, so the minimized loss is 1 - rho.
             loss_spearman = 1 - rank_loss
 
-        # Decide how many tokens to process.
+        # Paper default: floor(0.75 * 257) = 192 selected tokens per crop.
         k = max(1, int(self.capacity * s))
         top_k_values, top_k_indices = torch.topk(weights, k, dim=1, sorted=True)  # [B, k]
 
-        # Build the mask via top_k_indices.
         selected_mask = torch.zeros_like(weights, dtype=torch.bool).to(hidden_states.device)
         selected_mask = selected_mask.scatter(1, top_k_indices, torch.ones_like(top_k_indices, dtype=torch.bool))
 
-        # Initialize the output (unselected tokens stay unchanged).
+        # Start from the bypass path; selected positions are overwritten later.
         output = hidden_states.clone()
         selected_tokens = hidden_states.new_zeros((b, k, d))
         selected_weights = weights.new_zeros((b, k))
 
-        # Handle each sample individually.
+        # Boolean gathering preserves original sequence order, which makes the
+        # final scatter independent of the score-sorted TopK order.
         for i in range(b):
             current_mask = selected_mask[i]
             selected_tokens[i:i + 1, :, :] = hidden_states[i][current_mask].unsqueeze(0)
@@ -351,7 +372,6 @@ class DFDHRDetector(AbstractDetector):
             output_attentions=output_attentions,
         )
 
-        # Insert MoE adapter.
         hidden_states = self.adapters_attn[idx](hidden_states)
 
         hidden_states = residual + hidden_states
@@ -360,19 +380,17 @@ class DFDHRDetector(AbstractDetector):
         hidden_states = self.backbone.encoder.layers[idx].layer_norm2(hidden_states)
         hidden_states = self.backbone.encoder.layers[idx].mlp(hidden_states)
 
-        # Insert MoE adapter.
         hidden_states = self.adapters_mlp[idx](hidden_states)
 
-        # Weighted (after).
+        # DFD-HR Eq. 11: emphasize selected outputs with normalized scores.
         hidden_states = residual + hidden_states
         selected_weights = F.softmax(selected_weights, dim=1)
         selected_weights = selected_weights.unsqueeze(-1)
         weighted_output = hidden_states * (1 + selected_weights)
 
-        # Get the positions of the selected tokens.
         selected_indices = selected_mask.nonzero(as_tuple=True)
 
-        # Scatter the processed selected tokens back to their original positions.
+        # Restore [B,L,D]; bypassed tokens retain their input values.
         output[selected_indices] = weighted_output.view(-1, d)
         outputs = (output,)
 
@@ -384,7 +402,7 @@ class DFDHRDetector(AbstractDetector):
 
         return outputs
 
-    def classifier(self, features: torch.tensor) -> torch.tensor:
+    def classifier(self, features: torch.Tensor) -> torch.Tensor:
         return self.head(features)
 
     def get_losses(self, data_dict: dict, pred_dict: dict) -> dict:
@@ -425,6 +443,13 @@ def get_clip_visual(
     pretrained_path=None,
     local_files_only=False,
 ):
+    """Build a frozen CLIP vision tower from a pinned source or architecture.
+
+    Pretrained loading can be forced offline with ``pretrained_path`` and
+    ``local_files_only``. Only the vision tower and its 1024 -> 768 projection
+    are used; DFD-HR's routers, adapters, query attention, and classifier remain
+    trainable.
+    """
     supported_image_sizes = {
         'openai/clip-vit-large-patch14': 224,
         'openai/clip-vit-large-patch14-336': 336,
