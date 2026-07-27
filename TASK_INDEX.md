@@ -2,7 +2,7 @@
 
 本文件是新机器、新 Codex 会话和实验中断后的任务入口。通用规范见 `AGENTS.md`，详细实验流程见 `docs/EXPERIMENT_WORKFLOW.md`。
 
-> 当前状态：控制节点审计、实验生命周期、Jupyter 00-05、训练正确性修复、单/双卡 Smoke、pinned CLIP Mini Run 及正式训练协议修复已有证据；完整训练、归档实跑和部分节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
+> 当前状态：控制节点审计、实验生命周期、Jupyter 00-05、训练正确性修复、单/双卡 Smoke、pinned CLIP Mini Run、正式训练协议修复及 20 epoch 完整训练已有证据；跨数据集最终评估正在串行执行，归档实跑和部分节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
 
 ## 1. 启动顺序
 
@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `fix/distributed-validation-sharding`
+Current task branch: `docs/external-eval-reschedule`
 
-Completed scope: paper-spec MoE alignment, 3090 gates, timeout diagnosis, and distributed validation sharding
+Completed scope: paper-spec MoE alignment, 3090 gates, timeout diagnosis, distributed validation sharding, formal 20-epoch training, and held-out FF++ evaluation
 
-Next task branch: merge `fix/distributed-validation-sharding`, then restart the formal run from epoch 0 with a new RUN_ID
+Next task: finish the serial cross-dataset queue, validate all reports, generate the standardized summary and checksums, then sync the validated DFD-HR interface into DDF
 
 ## 3. 当前里程碑
 
@@ -601,7 +601,7 @@ checksums.sha256
 
 ### T4.4 完整训练
 
-**状态：ACTIVE**
+**状态：DONE**
 
 从 CLIP 初始化开始，不加载发布的 DFD-HR 权重。使用验证集选择 best，并维护可恢复 last。
 
@@ -741,11 +741,31 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 
 提交：实现 `b30eb2b`；任务索引提交待当前文档提交。下一步：审查并合并 `fix/distributed-validation-sharding`，从更新后的 `main` 创建新 RUN `_009`，重新生成 config、manifest 和 checksums，完成 GPU/空间/Git/JSON/CLIP 哈希门后从 epoch 0 启动。不得从 `_008` 恢复。
 
+正式完成证据（2026-07-23）：
+
+- 分布式验证实现经 PR `#25` 合并为 `main@1723faa`；RUN `_009` 从 epoch 0 开始完成全部 20 epoch，manifest 状态为 `completed`，没有从 `_008` 恢复或复用旧编号。
+- 冻结配置记录 paper-spec MoE、pinned CLIP 初始化、2 卡、每卡 batch `8`、有效 batch `16`、每 epoch 一次完整双卡分片验证和 180 分钟 DDP timeout；训练代码树为干净状态。
+- 最终 epoch 19 validation 共 `420` 个视频，frame AUC `0.9920784026`、video AUC `0.9978571429`；best checkpoint SHA-256 为 `579e3111981f52a3821ac763ae34fa62f98d65a3dc7531c7fdb1e5740777cc68`。
+- RUN config、manifest、structured metrics、best/last checkpoint 和 checksums 均保存在 Git 外运行目录；详细节点、路径和硬件记录未进入仓库。
+
+提交：训练绑定 `1723faa`；可信项目 checkpoint 加载由提交 `57afd9b` 实现并经 PR `#26` 合并为 `main@ac0189d`。下一步：T4.5 使用冻结 best checkpoint 完成 held-out 与跨数据集最终评估。
+
 ### T4.5 跨数据集最终评估
 
-**状态：BLOCKED by T4.4**
+**状态：ACTIVE**
 
-冻结 best checkpoint 后一次性执行，保存帧级/视频级指标、聚合方法、样本数、代码/配置/数据/权重哈希。
+冻结 best checkpoint 后按数据集独立执行，保存帧级/视频级指标、聚合方法、样本数、代码/配置/数据/权重哈希。每个数据集单独原子写入报告，已验证结果自动跳过，失败不覆盖既有证据。
+
+进行中证据（2026-07-27）：
+
+- held-out FaceForensics++ c23 完整测试已完成：`13436` 帧、`420` 视频，frame AUC `0.9891382890`、video AUC `0.9953316327`；报告绑定冻结 best checkpoint，代码树为干净状态。
+- DFDC 与 DeepFakeDetection 两份跨数据集报告已完成并保留，分别覆盖 `132116`/`102541` 个样本与 `4704`/`3429` 个视频。两份 JSON 可解析、指标均有限、`code.dirty=false`，checkpoint SHA 一致，数据 JSON SHA 已记录，日志无 Xid、OOM、CUDA 或图片读取错误，报告 checksum 已写入。
+- 初始评测角色出现持续热降频后停止承担本轮正式测试，已完成报告无需重跑。不同候选角色使用同一 DFDC 固定 `3200` 样本完成一致性门禁；最终选择无热降频的稳定角色，batch `8` 与 `16` 的七项指标完全一致。
+- 剩余 12 个数据集使用稳定角色的一张 GPU 串行执行，固定 batch `8`、workers `4`，数据集之间冷却 `600` 秒；每项完成后立即校验 JSON/指标/哈希/日志并同步到结果汇聚角色。未并发拆分同一数据集，也未修改本轮评测协议。
+- 当前队列从 Celeb-DF-v2 开始，后续依次覆盖 FaceShifter、DFDCP、test_WDF、uniface_ff、blendface_ff、mobileswap_ff、e4s_ff、facedancer_ff、fsgan_ff、inswap_ff 和 simswap_ff。详细节点名、路径、遥测和门禁报告仅保存在 Git 外。
+- 本轮调度未安装软件、修改系统配置或复制数据集；只复制了已校验的既有环境包、冻结配置、checkpoint 与 JSON 注册表。
+
+提交：评测实现 `57afd9b`，合并提交 `ac0189d`；任务索引提交待当前文档提交。下一步：监控串行队列，收齐 14 个跨数据集报告后生成 `summary.json`、`summary.csv` 和全目录 checksums，运行 lifecycle verify，再同步到 DDF 统一接口。
 
 ## 4. 每次任务结束时必须更新
 
