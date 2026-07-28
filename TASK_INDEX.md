@@ -41,7 +41,7 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `main` after PR `#27`
+Current task branch: `main` after the reproduction-results summary PR
 
 Completed scope: paper-spec MoE alignment, 3090 gates, timeout diagnosis, distributed validation sharding, formal 20-epoch training, held-out FF++ evaluation, 14-dataset cross-dataset evaluation, core method annotations, and a weight-free hierarchical-routing tutorial
 
@@ -773,8 +773,10 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 - 前两份报告记录实现提交 `57afd9b`，后 12 份记录任务索引提交 `a40a2b8`。Git 对象审计确认两个提交只相差 `TASK_INDEX.md`，`training` tree `76a6d6c21e336dc611426dbd8dbdd4de9506edc7` 与 `scripts` tree `232a8e127cfd7ac1f4f223262ab15a4627be0150` 完全一致；该双提交来源已显式写入 summary。
 - `test_DFR` 与 `test_FFIW` 在当前声明协议名下没有可用资产，已在 summary 中明确列为 `not_evaluated`，未伪装为完成。其余目标数据集均有正式结果。
 - 最终 lifecycle 输出为 `run_valid=true paths_protected=true checksums_valid=true budget_valid=true`，外部评估已 sealed，GPU 进程已释放。
+- Git 外结果归档已建立专用 RUN 目录，包含实验总览、255 条训练进度、20 次完整验证、同域测试、14 个跨数据集测试、2 个未评估项和逐文件 SHA-256 清单共 7 个 CSV；归档清单复核为 7 files、293 data rows。
+- 可公开的实验范围、关键结果解释和必要对比见 `docs/results/dfd_hr_009_reproduction.md`；完整数值、原始日志和 checkpoint 继续留在 Git 外。
 
-提交：评测实现 `57afd9b`，合并提交 `ac0189d`，启动状态索引 `a40a2b8`；最终任务索引提交待当前文档提交。下一步：通过 PR `#28` 合并本次收口，再从更新后的 `main` 同步 DFD-HR 评测接口与标准结果契约到 DDF。
+提交：评测实现 `57afd9b`，评测支持合并 `ac0189d`，启动状态索引 `a40a2b8`，最终收口经 PR `#28` 合并为 `main@69cf57c`。下一步：从最新 DFD-HR `main` 同步评测接口、教程和标准结果契约到 DDF unified。
 
 ## P5：方法理解与代码可读性
 
@@ -800,10 +802,11 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 - 正在运行的跨数据集评估工作树未修改；本任务只在独立 worktree 和分支完成。
 
 提交：`ee52222`（模型数据流注释）、`398edf2`（方法教程）和 `9379694`
-（loss、optimizer 与训练运行时注释）。
+（loss、optimizer 与训练运行时注释）；PR `#27` 已合并为
+`main@4621275`。
 
-下一步：审查并合并本分支；待活动评估封存后，再把新的 DFD-HR 提交同步进统一
-DDF 仓库的 `methods/dfd_hr` 子树，避免对旧快照重复修改。
+下一步：把最新 DFD-HR 提交同步进统一 DDF 仓库的 `methods/dfd_hr` 子树，
+再验证并合并 DDF unified 分支。
 
 ## 4. 每次任务结束时必须更新
 
