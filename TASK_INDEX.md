@@ -2,7 +2,7 @@
 
 本文件是新机器、新 Codex 会话和实验中断后的任务入口。通用规范见 `AGENTS.md`，详细实验流程见 `docs/EXPERIMENT_WORKFLOW.md`。
 
-> 当前状态：控制节点审计、实验生命周期、Jupyter 00-05、训练正确性修复、单/双卡 Smoke、pinned CLIP Mini Run、正式训练协议修复及 20 epoch 完整训练已有证据；跨数据集最终评估正在串行执行，归档实跑和部分节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
+> 当前状态：控制节点审计、实验生命周期、Jupyter 00-05、训练正确性修复、单/双卡 Smoke、pinned CLIP Mini Run、正式训练协议修复、20 epoch 完整训练及跨数据集最终评估已有证据；归档实跑和部分节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
 
 ## 1. 启动顺序
 
@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `docs/external-eval-reschedule`
+Current task branch: `main` after PR `#28`
 
-Completed scope: paper-spec MoE alignment, 3090 gates, timeout diagnosis, distributed validation sharding, formal 20-epoch training, and held-out FF++ evaluation
+Completed scope: paper-spec MoE alignment, 3090 gates, timeout diagnosis, distributed validation sharding, formal 20-epoch training, held-out FF++ evaluation, and 14-dataset cross-dataset evaluation
 
-Next task: finish the serial cross-dataset queue, validate all reports, generate the standardized summary and checksums, then sync the validated DFD-HR interface into DDF
+Next task: sync the validated DFD-HR evaluation interface and standardized results contract into DDF, then perform the approved archive step
 
 ## 3. 当前里程碑
 
@@ -752,7 +752,7 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 
 ### T4.5 跨数据集最终评估
 
-**状态：ACTIVE**
+**状态：DONE**
 
 冻结 best checkpoint 后按数据集独立执行，保存帧级/视频级指标、聚合方法、样本数、代码/配置/数据/权重哈希。每个数据集单独原子写入报告，已验证结果自动跳过，失败不覆盖既有证据。
 
@@ -765,7 +765,16 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 - 当前队列从 Celeb-DF-v2 开始，后续依次覆盖 FaceShifter、DFDCP、test_WDF、uniface_ff、blendface_ff、mobileswap_ff、e4s_ff、facedancer_ff、fsgan_ff、inswap_ff 和 simswap_ff。详细节点名、路径、遥测和门禁报告仅保存在 Git 外。
 - 本轮调度未安装软件、修改系统配置或复制数据集；只复制了已校验的既有环境包、冻结配置、checkpoint 与 JSON 注册表。
 
-提交：评测实现 `57afd9b`，合并提交 `ac0189d`；任务索引提交待当前文档提交。下一步：监控串行队列，收齐 14 个跨数据集报告后生成 `summary.json`、`summary.csv` 和全目录 checksums，运行 lifecycle verify，再同步到 DDF 统一接口。
+最终完成证据（2026-07-28）：
+
+- 串行队列于 2026-07-27 23:12 +08:00 正常退出，12 个续测数据集均为 `completed`、exit code `0`；加上已保留的 DFDC 和 DeepFakeDetection，共形成 14 份独立正式报告。
+- 标准化汇总覆盖 `393658` 个样本和 `13232` 个视频。14 份报告均可解析、指标有限、`code.dirty=false`，冻结 checkpoint SHA 一致，数据 JSON SHA 已记录，日志无 Xid、OOM、CUDA、图片读取或 Traceback 错误。
+- `summary.json`、`summary.csv` 和全目录 `checksums.sha256` 已生成；summary SHA-256 为 `921f7750b6bb7f31d2efa51136cc57e644c048202e818cc598858ee7e26f97c2`，CSV SHA-256 为 `01eb4b4284964a659e0ec6a7d36f7fb0ef22378bea31676f03e00a9008798931`。
+- 前两份报告记录实现提交 `57afd9b`，后 12 份记录任务索引提交 `a40a2b8`。Git 对象审计确认两个提交只相差 `TASK_INDEX.md`，`training` tree `76a6d6c21e336dc611426dbd8dbdd4de9506edc7` 与 `scripts` tree `232a8e127cfd7ac1f4f223262ab15a4627be0150` 完全一致；该双提交来源已显式写入 summary。
+- `test_DFR` 与 `test_FFIW` 在当前声明协议名下没有可用资产，已在 summary 中明确列为 `not_evaluated`，未伪装为完成。其余目标数据集均有正式结果。
+- 最终 lifecycle 输出为 `run_valid=true paths_protected=true checksums_valid=true budget_valid=true`，外部评估已 sealed，GPU 进程已释放。
+
+提交：评测实现 `57afd9b`，合并提交 `ac0189d`，启动状态索引 `a40a2b8`；最终任务索引提交待当前文档提交。下一步：通过 PR `#28` 合并本次收口，再从更新后的 `main` 同步 DFD-HR 评测接口与标准结果契约到 DDF。
 
 ## 4. 每次任务结束时必须更新
 
