@@ -17,6 +17,7 @@
 
 - [Introduction](#-introduction)
 - [Implementation Guide](#-implementation-guide)
+- [Independent Reproduction](#independent-reproduction)
 - [Quick Start](#-quick-start)
   - [1. Installation](#1-installation)
   - [2. Data Preparation](#2-data-preparation)
@@ -111,6 +112,16 @@ metrics, and per-rank random-number-generator state.
 For an executable, weight-free walkthrough with tensor-shape checks and a
 careful separation of established components from DFD-HR contributions, open
 [`notebooks/06_hierarchical_routing_tutorial.ipynb`](notebooks/06_hierarchical_routing_tutorial.ipynb).
+
+---
+
+## Independent Reproduction
+
+The independently trained 20-epoch reproduction and its held-out and
+cross-dataset evaluations are complete. The protocol, result interpretation,
+CSV artifact manifest, and required comparisons are recorded in
+[`docs/results/dfd_hr_009_reproduction.md`](docs/results/dfd_hr_009_reproduction.md).
+Generated metrics, logs, and checkpoints remain outside Git.
 
 ---
 
