@@ -10,10 +10,7 @@ from einops import rearrange
 
 
 def split_chessboard(x, num_split):
-    """
-        x: b * c * h * w
-        Deividing x into num_split**2 sub-squares, and concatenate all the sub-squares on the batch dimension
-    """
+    """Split BCHW into tiles ordered as ``(tile, batch)`` on dimension 0."""
     B, C, H, W = x.shape
     assert H % num_split == 0 and W % num_split == 0
     x_split = rearrange(x, 'b c (nh h) (nw w) -> (nh nw b) c h w', nh=num_split, nw=num_split)
@@ -21,11 +18,7 @@ def split_chessboard(x, num_split):
 
 
 def merge_chessboard(x, num_split):
-    """
-        x: b * c * h * w
-        Assuming x contains num_split**2 sub-squares concatenated along batch dimension, merge the sub-squares back to the original whole square.
-        (inverse of split_chessboard)
-    """
+    """Invert :func:`split_chessboard` and restore the full spatial map."""
     B, C, H, W = x.shape
     assert B % (num_split**2) == 0
     x_merge = rearrange(x, '(nh nw b) c h w -> b c (nh h) (nw w)', nh=num_split, nw=num_split)
@@ -48,21 +41,20 @@ def sample_gumbel(shape, device, eps=1e-20):
 
 
 def gumbel_sigmoid_sample(logits, tau=1.0):
+    """Differentiable continuation probability used before hard thresholding."""
     g = sample_gumbel(logits.shape, logits.device)
     y = torch.sigmoid((logits + g) / tau)
     return y
 
 
 def soft_rank(x, tau=1e-2):
+    """Approximate ranks with pairwise sigmoids so rank loss can backpropagate."""
     pairwise = (x.unsqueeze(-1) - x.unsqueeze(-2)) / tau
     return torch.sigmoid(pairwise).sum(dim=-1)
 
 
 def spearman_corr(x, y, tau=1e-2):
-    """
-    x, y: (B, T)
-    Returns: (B,) Spearman correlation coefficient for each sample pair.
-    """
+    """Return differentiable per-sample rank correlation for ``[B,T]`` pairs."""
     x_rank = soft_rank(x, tau=tau)
     y_rank = soft_rank(y, tau=tau)
 

@@ -2,7 +2,7 @@
 
 本文件是新机器、新 Codex 会话和实验中断后的任务入口。通用规范见 `AGENTS.md`，详细实验流程见 `docs/EXPERIMENT_WORKFLOW.md`。
 
-> 当前状态：控制节点审计、实验生命周期、Jupyter 00-05、训练正确性修复、单/双卡 Smoke、pinned CLIP Mini Run、正式训练协议修复、20 epoch 完整训练及跨数据集最终评估已有证据；归档实跑和部分节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
+> 当前状态：控制节点审计、实验生命周期、Jupyter 00-06、训练正确性修复、单/双卡 Smoke、pinned CLIP Mini Run、正式训练协议修复、20 epoch 完整训练、跨数据集最终评估及方法实现教程已有证据；归档实跑和部分节点准备仍未完成。除有明确证据的项目外，全部按 `TODO` 处理。
 
 ## 1. 启动顺序
 
@@ -41,11 +41,11 @@ git log --oneline --decorate -12
 - `DONE`：已完成并有提交、日志或报告证据。
 - `SUPERSEDED`：已由新方案替代。
 
-Current task branch: `main` after PR `#28`
+Current task branch: `main` after PR `#27`
 
-Completed scope: paper-spec MoE alignment, 3090 gates, timeout diagnosis, distributed validation sharding, formal 20-epoch training, held-out FF++ evaluation, and 14-dataset cross-dataset evaluation
+Completed scope: paper-spec MoE alignment, 3090 gates, timeout diagnosis, distributed validation sharding, formal 20-epoch training, held-out FF++ evaluation, 14-dataset cross-dataset evaluation, core method annotations, and a weight-free hierarchical-routing tutorial
 
-Next task: sync the validated DFD-HR evaluation interface and standardized results contract into DDF, then perform the approved archive step
+Next task: sync the validated DFD-HR backend, evaluation interface, and standardized results contract into DDF, then perform the approved archive step
 
 ## 3. 当前里程碑
 
@@ -775,6 +775,35 @@ Paper-spec 协议校准：**DONE**。完成证据（2026-07-21）：
 - 最终 lifecycle 输出为 `run_valid=true paths_protected=true checksums_valid=true budget_valid=true`，外部评估已 sealed，GPU 进程已释放。
 
 提交：评测实现 `57afd9b`，合并提交 `ac0189d`，启动状态索引 `a40a2b8`；最终任务索引提交待当前文档提交。下一步：通过 PR `#28` 合并本次收口，再从更新后的 `main` 同步 DFD-HR 评测接口与标准结果契约到 DDF。
+
+## P5：方法理解与代码可读性
+
+### T5.1 DFD-HR 方法数据流注释与教程
+
+**状态：DONE**
+
+- 核心 detector、多尺度融合、层/token router、MoE Adapter 和可微
+  Spearman 实现已补充凝练注释，明确 448 输入到 `[B, 2]` logits 的张量
+  形状与调用顺序。
+- 注释区分 CLIP、Attention、Adapter、MoE 等成熟组件，论文明确提出的
+  层/token/专家联合路由，以及尚需消融验证的研究方向，不宣称未验证的新颖性。
+- loss、optimizer、scheduler、AMP、梯度累积、DDP 同步和完整 checkpoint
+  resume 路径已补充注释；明确正式协议为两类 logits 的交叉熵加首路由层
+  Spearman、冻结 CLIP 和固定学习率 Adam。
+- `notebooks/06_hierarchical_routing_tutorial.ipynb` 为无输出源码 Notebook；
+  不加载权重、不读取数据、不使用 GPU，记录当前实现中首路由层 Spearman、
+  `top_k=4` 全专家激活、未消费的 load-balancing 配置和固定四局部 crop 等
+  复现注意点，并包含 loss 组合与有效 batch 的可执行示例。
+- 验证证据：87 tests OK，Python compileall、JSON/nbformat 结构与
+  `git diff --check` 通过；Notebook 使用真实 `dfd-hr` kernel 在 Git 外执行，
+  17 cells、7 code cells、0 errors。
+- 正在运行的跨数据集评估工作树未修改；本任务只在独立 worktree 和分支完成。
+
+提交：`ee52222`（模型数据流注释）、`398edf2`（方法教程）和 `9379694`
+（loss、optimizer 与训练运行时注释）。
+
+下一步：审查并合并本分支；待活动评估封存后，再把新的 DFD-HR 提交同步进统一
+DDF 仓库的 `methods/dfd_hr` 子树，避免对旧快照重复修改。
 
 ## 4. 每次任务结束时必须更新
 

@@ -11,13 +11,13 @@ backbone_config:
   num_classes: 2
   inc: 3
   dropout: false
-  layer: 24
-  remain_layer: 20
-  capacity: 0.75
+  layer: 24          # CLIP ViT-L/14 Transformer block count
+  remain_layer: 20   # blocks 0-19 are dense; 20-23 use layer/token routing
+  capacity: 0.75     # routed blocks process floor(0.75 * token_count)
   moe:
     num_experts: 4
-    top_k: 4
-    noise: true
+    top_k: 4          # all four experts contribute with learned gate weights
+    noise: true       # gate perturbation is training-only
     load_balancing_weight: 0.0
 
 # dataset
@@ -41,9 +41,9 @@ mean: [0.48145466, 0.4578275, 0.40821073]
 std: [0.26862954, 0.26130258, 0.27577711]
 
 optimizer:
-  type: adam
+  type: adam          # updates only parameters that receive gradients
   adam:
-    lr: 0.0001
+    lr: 0.0001        # fixed because lr_scheduler is null below
     beta1: 0.9
     beta2: 0.999
     eps: 0.00000001
@@ -66,7 +66,7 @@ manualSeed: 1024
 save_ckpt: true
 save_feat: true
 
-loss_func: cross_entropy
+loss_func: cross_entropy  # [B,2] logits + integer real/fake labels
 losstype: null
 
 metric_scoring: auc

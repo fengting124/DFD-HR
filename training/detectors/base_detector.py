@@ -9,8 +9,12 @@ import torch.nn as nn
 from typing import Union
 
 class AbstractDetector(nn.Module, metaclass=abc.ABCMeta):
-    """
-    All deepfake detectors should subclass this class.
+    """Contract separating feature extraction, prediction, and objectives.
+
+    Trainer code only depends on ``forward`` returning a prediction dictionary,
+    ``get_losses`` returning an ``overall`` scalar, and ``get_train_metrics``
+    returning detached diagnostics. This keeps optimization outside individual
+    detector architectures.
     """
     def __init__(self, config=None, load_param: Union[bool, str] = False):
         """
@@ -22,7 +26,7 @@ class AbstractDetector(nn.Module, metaclass=abc.ABCMeta):
         super().__init__()
 
     @abc.abstractmethod
-    def features(self, data_dict: dict) -> torch.tensor:
+    def features(self, data_dict: dict) -> torch.Tensor:
         """
         Returns the features from the backbone given the input data.
         """
@@ -36,7 +40,7 @@ class AbstractDetector(nn.Module, metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def classifier(self, features: torch.tensor) -> torch.tensor:
+    def classifier(self, features: torch.Tensor) -> torch.Tensor:
         """
         Classifies the features into classes.
         """

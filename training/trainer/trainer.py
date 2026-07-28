@@ -226,6 +226,13 @@ class Trainer(object):
         })
 
     def _configure_optimization_runtime(self):
+        """Freeze AMP, accumulation, and effective-batch semantics.
+
+        ``effective_batch = micro_batch_per_rank * world_size *
+        accumulation_steps``. AMP is enabled only on CUDA. SAM is rejected with
+        AMP or accumulation because its two-pass update has different gradient
+        semantics.
+        """
         accumulation_steps = self.config.get('gradient_accumulation_steps', 1)
         if isinstance(accumulation_steps, bool) or not isinstance(accumulation_steps, int) or accumulation_steps < 1:
             raise ValueError('gradient_accumulation_steps must be a positive integer')
@@ -393,6 +400,12 @@ class Trainer(object):
                 "=> no model found at '{}'".format(model_path))
 
     def resume_from_checkpoint(self, checkpoint_path):
+        """Restore the complete optimization trajectory and return next epoch.
+
+        Strict model weights alone are insufficient for resume: Adam moments,
+        scheduler position, GradScaler state, best-metric state, and each DDP
+        rank's random generators must also be restored.
+        """
         # Keep RNG and metadata tensors on CPU; state_dict loaders move parameter
         # and optimizer tensors to their owning device without corrupting RNG state.
         saved = torch.load(checkpoint_path, map_location='cpu')
@@ -485,6 +498,7 @@ class Trainer(object):
         }
 
     def _checkpoint_state(self, epoch, rng_states_by_rank=None):
+        """Build a full resume checkpoint, not a weight-only export."""
         model_to_save = self.model.module if isinstance(self.model, DDP) else self.model
         checkpoint = {
             'state_dict': model_to_save.state_dict(),
@@ -630,6 +644,19 @@ class Trainer(object):
         accumulation_divisor=1,
         gradient_observer=None,
     ):
+        """Run one micro-batch and optionally perform one optimizer update.
+
+        Standard Adam path:
+        ``forward -> total loss / accumulation window -> scaled backward``.
+        Non-final micro-batches only accumulate gradients. At the window
+        boundary, gradients are unscaled and checked before
+        ``optimizer.step``; GradScaler then updates its scale and gradients are
+        cleared. DDP uses ``no_sync`` around non-final micro-batches in
+        :meth:`train_epoch`, avoiding redundant all-reduce operations.
+
+        SAM is a separate two-forward/two-backward compatibility path and does
+        not support AMP or accumulation.
+        """
         if self.config['optimizer']['type']=='sam':
             if not should_step or accumulation_divisor != 1:
                 raise ValueError('SAM does not support gradient accumulation')
@@ -684,6 +711,14 @@ class Trainer(object):
         eval_data_loaders=None,
         eval_phase='test',
         ):
+        """Train one epoch and run validation at the frozen schedule.
+
+        Each batch moves tensors to the rank-local device, decides whether the
+        accumulation window ends, executes :meth:`train_step`, records detached
+        metrics, and triggers validation only at configured iteration
+        boundaries. Validation selects ``best``; the outer training loop writes
+        ``last`` after the epoch for exact resume.
+        """
 
         self.logger.info("===> Epoch[{}] start!".format(epoch))
         validation_iterations = resolve_validation_iterations(
@@ -735,8 +770,6 @@ class Trainer(object):
                     should_step=should_step,
                     accumulation_divisor=accumulation_divisor,
                 )
-
-            # update learning rate
 
             if 'SWA' in self.config and self.config['SWA'] and epoch>self.config['swa_start']:
                 self.swa_model.update_parameters(self.model)

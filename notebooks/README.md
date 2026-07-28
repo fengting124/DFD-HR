@@ -2,6 +2,11 @@
 
 Source notebooks are small, output-free diagnostics. Executed copies, runtime files, URLs, tokens, and logs stay outside Git under `${DFDHR_RUNTIME_ROOT}`.
 
+`06_hierarchical_routing_tutorial.ipynb` is a weight-free method walkthrough.
+It traces the paper-aligned tensor shapes, maps equations to source functions,
+and distinguishes established building blocks, DFD-HR contributions, and
+unvalidated research directions. It does not read datasets or start training.
+
 ## Local setup
 
 Use the existing DFD-HR Python environment and user-owned runtime storage:

@@ -1,11 +1,10 @@
-# borrowed from
-
-import torch
-
 import torch
 import torch.nn as nn
 
+
 def disable_running_stats(model):
+    """Prevent BatchNorm statistics from being updated on SAM's second pass."""
+
     def _disable(module):
         if isinstance(module, nn.BatchNorm2d):
             module.backup_momentum = module.momentum
@@ -14,6 +13,8 @@ def disable_running_stats(model):
     model.apply(_disable)
 
 def enable_running_stats(model):
+    """Restore BatchNorm momentum after a SAM two-pass update."""
+
     def _enable(module):
         if isinstance(module, nn.BatchNorm2d) and hasattr(module, "backup_momentum"):
             module.momentum = module.backup_momentum
@@ -21,11 +22,19 @@ def enable_running_stats(model):
     model.apply(_enable)
 
 class SAM(torch.optim.Optimizer):
+    """Sharpness-Aware Minimization compatibility optimizer.
+
+    ``first_step`` perturbs parameters toward the local worst-case direction.
+    A second forward/backward measures gradients there; ``second_step`` restores
+    the original parameters and applies the base SGD update. DFD-HR's formal
+    configuration uses Adam, so this class is not on the paper-aligned path.
+    """
+
     def __init__(self, params, base_optimizer, rho=0.05, **kwargs):
         assert rho >= 0.0, f"Invalid rho, should be non-negative: {rho}"
 
         defaults = dict(rho=rho, **kwargs)
-        super(SAM, self).__init__(params, defaults)
+        super().__init__(params, defaults)
 
         self.base_optimizer = base_optimizer(self.param_groups, **kwargs)
         self.param_groups = self.base_optimizer.param_groups
@@ -37,41 +46,48 @@ class SAM(torch.optim.Optimizer):
             scale = group["rho"] / (grad_norm + 1e-12)
 
             for p in group["params"]:
-                if p.grad is None: continue
+                if p.grad is None:
+                    continue
                 e_w = p.grad * scale.to(p)
-                p.add_(e_w)  # climb to the local maximum "w + e(w)"
+                p.add_(e_w)
                 self.state[p]["e_w"] = e_w
 
-        if zero_grad: self.zero_grad()
+        if zero_grad:
+            self.zero_grad()
 
     @torch.no_grad()
     def second_step(self, zero_grad=False):
         for group in self.param_groups:
             for p in group["params"]:
-                if p.grad is None: continue
-                p.sub_(self.state[p]["e_w"])  # get back to "w" from "w + e(w)"
+                if p.grad is None:
+                    continue
+                p.sub_(self.state[p]["e_w"])
 
-        self.base_optimizer.step()  # do the actual "sharpness-aware" update
+        self.base_optimizer.step()
 
-        if zero_grad: self.zero_grad()
+        if zero_grad:
+            self.zero_grad()
 
     @torch.no_grad()
     def step(self, closure=None):
         assert closure is not None, "Sharpness Aware Minimization requires closure, but it was not provided"
-        closure = torch.enable_grad()(closure)  # the closure should do a full forward-backward pass
+        closure = torch.enable_grad()(closure)
 
         self.first_step(zero_grad=True)
         closure()
         self.second_step()
 
     def _grad_norm(self):
-        shared_device = self.param_groups[0]["params"][0].device  # put everything on the same device, in case of model parallelism
+        shared_device = self.param_groups[0]["params"][0].device
         norm = torch.norm(
-                    torch.stack([
-                        p.grad.norm(p=2).to(shared_device)
-                        for group in self.param_groups for p in group["params"]
-                        if p.grad is not None
-                    ]),
-                    p=2
-               )
+            torch.stack(
+                [
+                    p.grad.norm(p=2).to(shared_device)
+                    for group in self.param_groups
+                    for p in group["params"]
+                    if p.grad is not None
+                ]
+            ),
+            p=2,
+        )
         return norm

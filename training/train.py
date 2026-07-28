@@ -317,6 +317,12 @@ def prepare_eval_data(config, mode, dataset_names):
 
 
 def choose_optimizer(model, config):
+    """Construct the parameter update rule from detector YAML.
+
+    PyTorch receives all model parameters, but frozen CLIP parameters have
+    ``requires_grad=False`` and therefore receive no gradient or update.
+    Paper-aligned DFD-HR uses Adam at 1e-4; SGD and SAM are compatibility paths.
+    """
     opt_name = config['optimizer']['type']
     if opt_name == 'sgd':
         optimizer = optim.SGD(
@@ -349,6 +355,12 @@ def choose_optimizer(model, config):
 
 
 def choose_scheduler(config, optimizer):
+    """Construct the optional epoch-level learning-rate scheduler.
+
+    The paper-aligned formal configuration sets ``lr_scheduler: null``, so Adam
+    keeps a fixed 1e-4 learning rate. Step, cosine, and linear decay remain
+    available for separate experiments and must be recorded in the manifest.
+    """
     if config['lr_scheduler'] is None:
         return None
     elif config['lr_scheduler'] == 'step':
@@ -437,7 +449,7 @@ def main():
         else None
     )
 
-    # prepare the model (detector)
+    # Registry name -> DFDHRDetector -> frozen CLIP plus trainable HR modules.
     model_class = DETECTOR[config['model_name']]
     model = model_class(config)
     
@@ -450,10 +462,10 @@ def main():
     # from pdb import set_trace as st
     # st()
 
-    # prepare the optimizer
+    # The optimizer is built before DDP wrapping; Trainer moves/wraps the same
+    # parameter objects, so optimizer references remain valid.
     optimizer = choose_optimizer(model, config)
 
-    # prepare the scheduler
     scheduler = choose_scheduler(config, optimizer)
 
     # prepare the metric
@@ -475,7 +487,8 @@ def main():
     if args.resume:
         config['start_epoch'] = trainer.resume_from_checkpoint(args.resume)
 
-    # start training
+    # One epoch owns training and validation; main advances epoch schedulers,
+    # writes a recoverable last checkpoint, then proceeds to the next epoch.
     best_metric = None
     for epoch in build_epoch_range(config):
         if config['ddp'] and isinstance(train_data_loader.sampler, DistributedSampler):
